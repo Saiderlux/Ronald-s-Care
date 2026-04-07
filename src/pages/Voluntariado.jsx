@@ -1,82 +1,11 @@
 import { useState } from 'react'
 import confetti from 'canvas-confetti'
-
-const VOLUNTEER_ROLES = [
-  {
-    id: 1,
-    emoji: '🤡',
-    title: 'Animador de Fiestas',
-    description: 'Haz sonreír a los niños como payaso, botarga o mago. Organizamos fiestas de cumpleaños y eventos especiales en la Casa.',
-    skills: ['Animación', 'Trabajo con niños', 'Creatividad'],
-    schedule: 'Sábados 10:00 - 14:00',
-    spotsLeft: 3,
-    totalSpots: 5,
-    commitment: '4 hrs/semana',
-    category: 'entretenimiento',
-  },
-  {
-    id: 2,
-    emoji: '👨‍🍳',
-    title: 'Cocinero Voluntario',
-    description: 'Prepara desayunos, comidas o cenas nutritivas para las familias. No necesitas ser chef, solo tener ganas de servir.',
-    skills: ['Cocina básica', 'Higiene', 'Trabajo en equipo'],
-    schedule: 'Lunes a Viernes, turnos de 3 hrs',
-    spotsLeft: 5,
-    totalSpots: 8,
-    commitment: '3 hrs/semana',
-    category: 'alimentacion',
-  },
-  {
-    id: 3,
-    emoji: '📚',
-    title: 'Tutor Escolar',
-    description: 'Ayuda a los niños en tratamiento a no perder el año escolar. Matemáticas, español, inglés — lo que domines.',
-    skills: ['Paciencia', 'Conocimiento académico', 'Empatía'],
-    schedule: 'Martes y Jueves 16:00 - 18:00',
-    spotsLeft: 4,
-    totalSpots: 6,
-    commitment: '4 hrs/semana',
-    category: 'educacion',
-  },
-  {
-    id: 4,
-    emoji: '🎨',
-    title: 'Tallerista de Arte',
-    description: 'Pintura, manualidades, música o teatro. Cualquier expresión artística que ayude a los niños a expresarse y distraerse.',
-    skills: ['Habilidad artística', 'Creatividad', 'Paciencia'],
-    schedule: 'Miércoles 15:00 - 17:00',
-    spotsLeft: 2,
-    totalSpots: 4,
-    commitment: '2 hrs/semana',
-    category: 'entretenimiento',
-  },
-  {
-    id: 5,
-    emoji: '🧹',
-    title: 'Apoyo en Mantenimiento',
-    description: 'La Casa necesita manos para pintar, reparar, limpiar y mantener los espacios acogedores para las familias.',
-    skills: ['Bricolaje', 'Trabajo físico', 'Disponibilidad'],
-    schedule: 'Domingos 9:00 - 13:00',
-    spotsLeft: 6,
-    totalSpots: 10,
-    commitment: '4 hrs/semana',
-    category: 'operaciones',
-  },
-  {
-    id: 6,
-    emoji: '🫂',
-    title: 'Acompañante Emocional',
-    description: 'A veces las mamás y papás solo necesitan alguien que los escuche. Sé esa presencia cálida en sus días más difíciles.',
-    skills: ['Empatía', 'Escucha activa', 'Estabilidad emocional'],
-    schedule: 'Flexible, mínimo 2 hrs/semana',
-    spotsLeft: 3,
-    totalSpots: 5,
-    commitment: '2 hrs/semana',
-    category: 'bienestar',
-  },
-]
+import { useFichas } from '../context/FichasContext.jsx'
 
 export default function Voluntariado() {
+  const { getCollaborativeNeeds, enrollVolunteer } = useFichas()
+  const volunteerEvents = getCollaborativeNeeds()
+
   const [selectedRole, setSelectedRole] = useState(null)
   const [formData, setFormData] = useState({
     nombre: '',
@@ -86,6 +15,9 @@ export default function Voluntariado() {
     motivacion: '',
     experiencia: '',
     disponibilidad: 'manana',
+    tipo: 'individual',
+    corporateSlots: '',
+    empresa: '',
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
@@ -98,6 +30,10 @@ export default function Voluntariado() {
     e.preventDefault()
     setIsSubmitting(true)
     setTimeout(() => {
+      const slots = formData.tipo === 'empresarial'
+        ? parseInt(formData.corporateSlots) || 1
+        : 1
+      enrollVolunteer(selectedRole.id, slots)
       setIsSubmitting(false)
       setIsSuccess(true)
       confetti({
@@ -120,12 +56,15 @@ export default function Voluntariado() {
       motivacion: '',
       experiencia: '',
       disponibilidad: 'manana',
+      tipo: 'individual',
+      corporateSlots: '',
+      empresa: '',
     })
     document.body.style.overflow = ''
   }
 
-  function handleOpenForm(role) {
-    setSelectedRole(role)
+  function handleOpenForm(event) {
+    setSelectedRole(event)
     setIsSuccess(false)
     document.body.style.overflow = 'hidden'
   }
@@ -141,85 +80,114 @@ export default function Voluntariado() {
           </h1>
           <p className="dashboard__subtitle">
             No solo de dinero vive la Casa. Tu tiempo, talento y cariño
-            también transforman vidas. Postúlate como voluntario.
+            también transforman vidas. Inscríbete como voluntario.
           </p>
         </div>
 
+        {/* Empty State */}
+        {volunteerEvents.length === 0 && (
+          <div className="dashboard__empty-state">
+            <span className="dashboard__empty-icon">🤲</span>
+            <h3 className="dashboard__empty-title">
+              Aún no hay eventos de voluntariado
+            </h3>
+            <p className="dashboard__empty-text">
+              El equipo de la Fundación está organizando nuevos eventos.
+              <br />
+              ¡Vuelve pronto para ver cómo puedes donar tu tiempo!
+            </p>
+          </div>
+        )}
+
         {/* Volunteer Grid */}
         <div className="cards-grid">
-          {VOLUNTEER_ROLES.map((role, index) => (
-            <article
-              className="need-card"
-              key={role.id}
-              style={{ animationDelay: `${index * 0.1}s` }}
-            >
-              <div
-                className="need-card__image"
-                style={{
-                  background: `linear-gradient(135deg, ${getGradient(role.category)})`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '4rem',
-                }}
+          {volunteerEvents.map((event, index) => {
+            const spotsLeft = event.maxCapacity - (event.currentEnrolled || 0)
+            const isFull = spotsLeft <= 0
+            const fillPct = ((event.currentEnrolled || 0) / event.maxCapacity) * 100
+
+            return (
+              <article
+                className={`need-card ${event.isUrgent ? 'urgent' : ''}`}
+                key={event.id}
+                style={{ animationDelay: `${index * 0.1}s` }}
               >
-                {role.emoji}
-              </div>
-
-              <div className="need-card__body">
-                <span className="need-card__type-label volunteer-label">🙋 Voluntariado</span>
-                <h3 className="need-card__title">{role.title}</h3>
-                <p className="need-card__description" style={{ WebkitLineClamp: 3 }}>
-                  {role.description}
-                </p>
-
-                {/* Skills */}
-                <div className="vol-skills">
-                  {role.skills.map(skill => (
-                    <span className="vol-skill-tag" key={skill}>{skill}</span>
-                  ))}
-                </div>
-
-                {/* Info Row */}
-                <div className="vol-info-row">
-                  <div className="vol-info-item">
-                    <span className="vol-info-icon">🕐</span>
-                    <span>{role.commitment}</span>
-                  </div>
-                  <div className="vol-info-item">
-                    <span className="vol-info-icon">📅</span>
-                    <span>{role.schedule}</span>
-                  </div>
-                </div>
-
-                {/* Spots */}
-                <div className="vol-spots">
-                  <div className="vol-spots__bar">
-                    <div
-                      className="vol-spots__fill"
-                      style={{ width: `${((role.totalSpots - role.spotsLeft) / role.totalSpots) * 100}%` }}
-                    />
-                  </div>
-                  <span className="vol-spots__text">
-                    {role.spotsLeft} de {role.totalSpots} lugares disponibles
-                  </span>
-                </div>
-
-                <div className="need-card__footer">
-                  <span className="need-card__donors">
-                    <span className="need-card__donors-icon">❤️</span>
-                    {role.totalSpots - role.spotsLeft} voluntarios
-                  </span>
-                  <button
-                    className="need-card__btn volunteer-btn"
-                    onClick={() => handleOpenForm(role)}
+                <div style={{ position: 'relative' }}>
+                  <div
+                    className="need-card__image"
+                    style={{
+                      background: `linear-gradient(135deg, ${getGradient(event.category)})`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '4rem',
+                    }}
                   >
-                    Postularme →
-                  </button>
+                    {event.emoji}
+                  </div>
+                  {event.isUrgent && (
+                    <span className="need-card__urgent-badge">
+                      🔴 Urgente {event.deadline ? `— ${event.deadline}` : ''}
+                    </span>
+                  )}
                 </div>
-              </div>
-            </article>
-          ))}
+
+                <div className="need-card__body">
+                  <span className="need-card__type-label volunteer-label">🤲 Voluntariado</span>
+                  <h3 className="need-card__title">{event.title}</h3>
+                  <p className="need-card__description" style={{ WebkitLineClamp: 3 }}>
+                    {event.description}
+                  </p>
+
+                  {/* Info Row */}
+                  <div className="vol-info-row">
+                    {event.eventDate && (
+                      <div className="vol-info-item">
+                        <span className="vol-info-icon">📅</span>
+                        <span>{event.eventDate}</span>
+                      </div>
+                    )}
+                    {event.eventLocation && (
+                      <div className="vol-info-item">
+                        <span className="vol-info-icon">📍</span>
+                        <span>{event.eventLocation}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Spots */}
+                  <div className="vol-spots">
+                    <div className="vol-spots__bar">
+                      <div
+                        className="vol-spots__fill"
+                        style={{ width: `${fillPct}%` }}
+                      />
+                    </div>
+                    <span className="vol-spots__text">
+                      {isFull
+                        ? '✅ ¡Cupo lleno!'
+                        : `${spotsLeft} de ${event.maxCapacity} lugares disponibles`
+                      }
+                    </span>
+                  </div>
+
+                  <div className="need-card__footer">
+                    <span className="need-card__donors">
+                      <span className="need-card__donors-icon">❤️</span>
+                      {event.currentEnrolled || 0} voluntarios
+                    </span>
+                    <button
+                      className={`need-card__btn ${isFull ? 'completed-btn' : 'volunteer-btn'}`}
+                      onClick={() => handleOpenForm(event)}
+                      disabled={isFull}
+                    >
+                      {isFull ? '✅ Cupo Lleno' : 'Inscribirme →'}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            )
+          })}
         </div>
       </div>
 
@@ -236,9 +204,9 @@ export default function Voluntariado() {
                   ¡Bienvenido al <span className="text-gradient">equipo</span>!
                 </h2>
                 <p className="success-state__message">
-                  Tu postulación como <strong>{selectedRole.title}</strong> fue
+                  Tu inscripción para <strong>{selectedRole.title}</strong> fue
                   registrada. El coordinador de la Casa Ronald McDonald te
-                  contactará pronto para agendar tu primera visita.
+                  contactará pronto.
                 </p>
                 <div style={{
                   background: '#F5F5F5',
@@ -251,9 +219,15 @@ export default function Voluntariado() {
                   <p style={{ fontSize: '0.8125rem', color: '#6B6B6B', lineHeight: 1.6 }}>
                     📧 Recibirás un correo de confirmación en <strong>{formData.email || 'tu correo'}</strong>
                     <br />
-                    📅 Horario: <strong>{selectedRole.schedule}</strong>
+                    📅 Fecha: <strong>{selectedRole.eventDate}</strong>
                     <br />
-                    🕐 Compromiso: <strong>{selectedRole.commitment}</strong>
+                    📍 Lugar: <strong>{selectedRole.eventLocation}</strong>
+                    {formData.tipo === 'empresarial' && (
+                      <>
+                        <br />
+                        🏢 Empresa: <strong>{formData.empresa}</strong> — {formData.corporateSlots} lugares reservados
+                      </>
+                    )}
                   </p>
                 </div>
                 <button className="success-state__btn" onClick={handleClose}>
@@ -263,26 +237,79 @@ export default function Voluntariado() {
             ) : (
               <>
                 <div className="modal__header">
-                  <h2 className="modal__title">🙋 Postularme</h2>
+                  <h2 className="modal__title">🙋 Inscribirme</h2>
                   <button className="modal__close" onClick={handleClose}>✕</button>
                 </div>
                 <div className="modal__body">
-                  {/* Role Info */}
+                  {/* Event Info */}
                   <div className="modal__need-info">
                     <div className="modal__need-emoji">{selectedRole.emoji}</div>
                     <div>
                       <p className="modal__need-title">{selectedRole.title}</p>
                       <p className="modal__need-remaining">
-                        {selectedRole.schedule} · {selectedRole.spotsLeft} lugares
+                        📅 {selectedRole.eventDate} · 📍 {selectedRole.eventLocation}
                       </p>
                     </div>
                   </div>
 
+                  {/* Tipo de Registro */}
+                  <div className="vol-tipo-selector">
+                    <label className={`vol-tipo-option ${formData.tipo === 'individual' ? 'active' : ''}`}>
+                      <input
+                        type="radio"
+                        name="tipo"
+                        value="individual"
+                        checked={formData.tipo === 'individual'}
+                        onChange={handleChange}
+                      />
+                      <span>🧑 Individual</span>
+                    </label>
+                    <label className={`vol-tipo-option ${formData.tipo === 'empresarial' ? 'active' : ''}`}>
+                      <input
+                        type="radio"
+                        name="tipo"
+                        value="empresarial"
+                        checked={formData.tipo === 'empresarial'}
+                        onChange={handleChange}
+                      />
+                      <span>🏢 Empresarial</span>
+                    </label>
+                  </div>
+
                   {/* Form */}
                   <form className="vol-form" onSubmit={handleSubmit}>
+                    {formData.tipo === 'empresarial' && (
+                      <div className="vol-form__row">
+                        <div className="vol-form__field">
+                          <label>Nombre de la empresa *</label>
+                          <input
+                            type="text"
+                            name="empresa"
+                            required
+                            placeholder="Ej. Comex, Liverpool"
+                            value={formData.empresa}
+                            onChange={handleChange}
+                          />
+                        </div>
+                        <div className="vol-form__field">
+                          <label>Lugares a reservar *</label>
+                          <input
+                            type="number"
+                            name="corporateSlots"
+                            required
+                            min="1"
+                            max={selectedRole.maxCapacity - (selectedRole.currentEnrolled || 0)}
+                            placeholder="Ej. 15"
+                            value={formData.corporateSlots}
+                            onChange={handleChange}
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     <div className="vol-form__row">
                       <div className="vol-form__field">
-                        <label>Nombre completo *</label>
+                        <label>{formData.tipo === 'empresarial' ? 'Nombre del contacto *' : 'Nombre completo *'}</label>
                         <input
                           type="text"
                           name="nombre"
@@ -332,32 +359,6 @@ export default function Voluntariado() {
                     </div>
 
                     <div className="vol-form__field">
-                      <label>Disponibilidad preferida *</label>
-                      <select
-                        name="disponibilidad"
-                        value={formData.disponibilidad}
-                        onChange={handleChange}
-                        required
-                      >
-                        <option value="manana">Mañanas (9:00 - 13:00)</option>
-                        <option value="tarde">Tardes (14:00 - 18:00)</option>
-                        <option value="finsemana">Fines de semana</option>
-                        <option value="flexible">Flexible</option>
-                      </select>
-                    </div>
-
-                    <div className="vol-form__field">
-                      <label>¿Tienes experiencia previa? (Opcional)</label>
-                      <textarea
-                        name="experiencia"
-                        rows="2"
-                        placeholder="Ej. He sido voluntario en Cruz Roja por 2 años..."
-                        value={formData.experiencia}
-                        onChange={handleChange}
-                      />
-                    </div>
-
-                    <div className="vol-form__field">
                       <label>¿Por qué quieres ser voluntario? *</label>
                       <textarea
                         name="motivacion"
@@ -375,8 +376,10 @@ export default function Voluntariado() {
                       disabled={isSubmitting}
                     >
                       {isSubmitting
-                        ? '⏳ Enviando postulación...'
-                        : `🙋 Postularme como ${selectedRole.title}`
+                        ? '⏳ Enviando inscripción...'
+                        : formData.tipo === 'empresarial'
+                          ? `🏢 Reservar ${formData.corporateSlots || ''} lugares`
+                          : `🙋 Inscribirme en ${selectedRole.title}`
                       }
                     </button>
                   </form>
@@ -392,6 +395,14 @@ export default function Voluntariado() {
 
 function getGradient(category) {
   const gradients = {
+    mantenimiento: '#E3F2FD 0%, #90CAF9 50%, #64B5F6 100%',
+    pintura: '#F3E5F5 0%, #CE93D8 50%, #BA68C8 100%',
+    limpieza: '#E0F7FA 0%, #80DEEA 50%, #4DD0E1 100%',
+    cocina: '#fce4ec 0%, #f8bbd0 50%, #f48fb1 100%',
+    recreacion: '#FFE0B2 0%, #FFCC80 50%, #FFB74D 100%',
+    educacion_vol: '#f3e5f5 0%, #ce93d8 50%, #ba68c8 100%',
+    acompanamiento: '#E8F5E9 0%, #A5D6A7 50%, #81C784 100%',
+    // Fallbacks para categorías antiguas
     entretenimiento: '#FFE0B2 0%, #FFCC80 50%, #FFB74D 100%',
     alimentacion: '#fce4ec 0%, #f8bbd0 50%, #f48fb1 100%',
     educacion: '#f3e5f5 0%, #ce93d8 50%, #ba68c8 100%',

@@ -1,22 +1,36 @@
 import { useState } from 'react'
-import { getCollaborativeNeeds, getGiftNeeds, CATEGORIES } from '../data/mockData.js'
+import { useFichas } from '../context/FichasContext.jsx'
 import NeedCard from '../components/NeedCard.jsx'
 import PaymentModal from '../components/PaymentModal.jsx'
 
+const CATEGORIES = [
+  { id: 'all', label: '🏠 Todas', emoji: '🏠' },
+  { id: 'transporte', label: '🚐 Transporte', emoji: '🚐' },
+  { id: 'alimentacion', label: '🍕 Alimentación', emoji: '🍕' },
+  { id: 'higiene', label: '🧴 Higiene', emoji: '🧴' },
+  { id: 'bienestar', label: '💛 Bienestar', emoji: '💛' },
+  { id: 'educacion', label: '📚 Educación', emoji: '📚' },
+  { id: 'salud', label: '🏥 Salud', emoji: '🏥' },
+]
+
 export default function Dashboard() {
-  const [collaborativeNeeds, setCollaborativeNeeds] = useState(getCollaborativeNeeds())
-  const [giftNeeds, setGiftNeeds] = useState(getGiftNeeds())
+  const { getCollaborativeNeeds, getGiftNeeds, getDonationNeeds, donateToFicha, getNeedById } = useFichas()
   const [activeFilter, setActiveFilter] = useState('all')
   const [selectedNeed, setSelectedNeed] = useState(null)
+  const [, forceUpdate] = useState(0)
+
+  // Obtener fichas del contexto (en vez de mockData)
+  const collaborativeNeeds = getCollaborativeNeeds()
+  const giftNeeds = getGiftNeeds()
+  const donationNeeds = getDonationNeeds()
 
   // Filter
-  const filteredCollaborative = activeFilter === 'all'
-    ? collaborativeNeeds
-    : collaborativeNeeds.filter(n => n.category === activeFilter)
+  const filterByCategory = (items) =>
+    activeFilter === 'all' ? items : items.filter(n => n.category === activeFilter)
 
-  const filteredGifts = activeFilter === 'all'
-    ? giftNeeds
-    : giftNeeds.filter(n => n.category === activeFilter)
+  const filteredCollaborative = filterByCategory(collaborativeNeeds)
+  const filteredGifts = filterByCategory(giftNeeds)
+  const filteredDonations = filterByCategory(donationNeeds)
 
   // Sort collaborative: urgent first, then by progress ascending, completed last
   const sortedCollaborative = [...filteredCollaborative].sort((a, b) => {
@@ -40,25 +54,33 @@ export default function Dashboard() {
     return 0
   })
 
+  // Sort donations same as collaborative
+  const sortedDonations = [...filteredDonations].sort((a, b) => {
+    if (a.isUrgent && !b.isUrgent) return -1
+    if (!a.isUrgent && b.isUrgent) return 1
+    const pctA = a.currentAmount / a.goalAmount
+    const pctB = b.currentAmount / b.goalAmount
+    if (pctA >= 1 && pctB < 1) return 1
+    if (pctB >= 1 && pctA < 1) return -1
+    return pctA - pctB
+  })
+
   function handleDonate(need) {
     setSelectedNeed(need)
   }
 
   function handleDonationComplete(updatedNeed) {
-    if (updatedNeed.type === 'collaborative') {
-      setCollaborativeNeeds(prev =>
-        prev.map(n => (n.id === updatedNeed.id ? updatedNeed : n))
-      )
-    } else {
-      setGiftNeeds(prev =>
-        prev.map(n => (n.id === updatedNeed.id ? updatedNeed : n))
-      )
-    }
+    // La donación ya se maneja en el contexto
+    // Forzar re-render para ver cambios
+    forceUpdate(n => n + 1)
   }
 
   function handleCloseModal() {
     setSelectedNeed(null)
   }
+
+  const totalFichas =
+    sortedCollaborative.length + sortedGifts.length + sortedDonations.length
 
   return (
     <main className="dashboard" id="dashboard">
@@ -87,6 +109,21 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
+
+        {/* Empty State - No fichas at all */}
+        {totalFichas === 0 && (
+          <div className="dashboard__empty-state">
+            <span className="dashboard__empty-icon">🏠</span>
+            <h3 className="dashboard__empty-title">
+              Aún no hay necesidades publicadas
+            </h3>
+            <p className="dashboard__empty-text">
+              El equipo de la Fundación está preparando las fichas de necesidades.
+              <br />
+              ¡Vuelve pronto para ver cómo puedes ayudar!
+            </p>
+          </div>
+        )}
 
         {/* SECTION 1: Collaborative Needs */}
         {sortedCollaborative.length > 0 && (
@@ -126,12 +163,23 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* Empty state */}
-        {sortedCollaborative.length === 0 && sortedGifts.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '64px 0', color: '#9E9E9E' }}>
-            <p style={{ fontSize: '3rem', marginBottom: '16px' }}>🔍</p>
-            <p>No hay necesidades en esta categoría por ahora.</p>
-          </div>
+        {/* SECTION 3: Donation Needs */}
+        {sortedDonations.length > 0 && (
+          <>
+            <div className="section-header">
+              <h2 className="section-title">
+                💰 Donaciones
+                <span className="section-count">
+                  — Aporta libremente a una causa
+                </span>
+              </h2>
+            </div>
+            <div className="cards-grid">
+              {sortedDonations.map(need => (
+                <NeedCard key={need.id} need={need} onDonate={handleDonate} />
+              ))}
+            </div>
+          </>
         )}
       </div>
 

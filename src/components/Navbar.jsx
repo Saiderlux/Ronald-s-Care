@@ -53,6 +53,14 @@ export default function Navbar() {
               📧 Correos
             </NavLink>
           </li>
+          <li>
+            <NavLink
+              to="/admin"
+              className={({ isActive }) => `navbar__link navbar__link--admin ${isActive ? 'active' : ''}`}
+            >
+              🔒 Admin
+            </NavLink>
+          </li>
         </ul>
 
         <button
