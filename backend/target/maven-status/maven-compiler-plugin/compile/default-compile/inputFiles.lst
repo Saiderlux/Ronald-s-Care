@@ -1,0 +1,6 @@
+/home/saider/Documentos/Hackaton_IDEA/backend/src/main/java/com/conexion/tangible/TangibleApplication.java
+/home/saider/Documentos/Hackaton_IDEA/backend/src/main/java/com/conexion/tangible/controller/CardController.java
+/home/saider/Documentos/Hackaton_IDEA/backend/src/main/java/com/conexion/tangible/model/Donation.java
+/home/saider/Documentos/Hackaton_IDEA/backend/src/main/java/com/conexion/tangible/model/NeedCard.java
+/home/saider/Documentos/Hackaton_IDEA/backend/src/main/java/com/conexion/tangible/repository/DonationRepository.java
+/home/saider/Documentos/Hackaton_IDEA/backend/src/main/java/com/conexion/tangible/repository/NeedCardRepository.java
