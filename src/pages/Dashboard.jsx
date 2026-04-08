@@ -14,52 +14,37 @@ const CATEGORIES = [
 ]
 
 export default function Dashboard() {
-  const { getCollaborativeNeeds, getGiftNeeds, getDonationNeeds, donateToFicha, getNeedById } = useFichas()
+  const { getDonationNeeds, getGiftNeeds, loading } = useFichas()
   const [activeFilter, setActiveFilter] = useState('all')
   const [selectedNeed, setSelectedNeed] = useState(null)
   const [, forceUpdate] = useState(0)
 
-  // Obtener fichas del contexto (en vez de mockData)
-  const collaborativeNeeds = getCollaborativeNeeds()
   const giftNeeds = getGiftNeeds()
   const donationNeeds = getDonationNeeds()
 
-  // Filter
+  // Filter by category
   const filterByCategory = (items) =>
     activeFilter === 'all' ? items : items.filter(n => n.category === activeFilter)
 
-  const filteredCollaborative = filterByCategory(collaborativeNeeds)
   const filteredGifts = filterByCategory(giftNeeds)
   const filteredDonations = filterByCategory(donationNeeds)
 
-  // Sort collaborative: urgent first, then by progress ascending, completed last
-  const sortedCollaborative = [...filteredCollaborative].sort((a, b) => {
-    if (a.isUrgent && !b.isUrgent) return -1
-    if (!a.isUrgent && b.isUrgent) return 1
-    const pctA = a.currentAmount / a.goalAmount
-    const pctB = b.currentAmount / b.goalAmount
-    if (pctA >= 1 && pctB < 1) return 1
-    if (pctB >= 1 && pctA < 1) return -1
-    return pctA - pctB
-  })
-
-  // Sort gifts: urgent first, completed last
+  // Sort: urgent first, completed last
   const sortedGifts = [...filteredGifts].sort((a, b) => {
-    if (a.isUrgent && !b.isUrgent) return -1
-    if (!a.isUrgent && b.isUrgent) return 1
-    const doneA = a.unitsDonated >= a.totalUnits
-    const doneB = b.unitsDonated >= b.totalUnits
+    if (a.is_urgent && !b.is_urgent) return -1
+    if (!a.is_urgent && b.is_urgent) return 1
+    const doneA = a.units_donated >= a.total_units
+    const doneB = b.units_donated >= b.total_units
     if (doneA && !doneB) return 1
     if (doneB && !doneA) return -1
     return 0
   })
 
-  // Sort donations same as collaborative
   const sortedDonations = [...filteredDonations].sort((a, b) => {
-    if (a.isUrgent && !b.isUrgent) return -1
-    if (!a.isUrgent && b.isUrgent) return 1
-    const pctA = a.currentAmount / a.goalAmount
-    const pctB = b.currentAmount / b.goalAmount
+    if (a.is_urgent && !b.is_urgent) return -1
+    if (!a.is_urgent && b.is_urgent) return 1
+    const pctA = (a.goal_amount > 0) ? a.current_amount / a.goal_amount : 0
+    const pctB = (b.goal_amount > 0) ? b.current_amount / b.goal_amount : 0
     if (pctA >= 1 && pctB < 1) return 1
     if (pctB >= 1 && pctA < 1) return -1
     return pctA - pctB
@@ -69,9 +54,7 @@ export default function Dashboard() {
     setSelectedNeed(need)
   }
 
-  function handleDonationComplete(updatedNeed) {
-    // La donación ya se maneja en el contexto
-    // Forzar re-render para ver cambios
+  function handleDonationComplete() {
     forceUpdate(n => n + 1)
   }
 
@@ -79,8 +62,19 @@ export default function Dashboard() {
     setSelectedNeed(null)
   }
 
-  const totalFichas =
-    sortedCollaborative.length + sortedGifts.length + sortedDonations.length
+  const totalFichas = sortedGifts.length + sortedDonations.length
+
+  if (loading) {
+    return (
+      <main className="dashboard" id="dashboard">
+        <div className="container">
+          <div className="dashboard__header">
+            <h1 className="dashboard__title">Cargando...</h1>
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main className="dashboard" id="dashboard">
@@ -88,7 +82,7 @@ export default function Dashboard() {
         {/* Header */}
         <div className="dashboard__header">
           <h1 className="dashboard__title">
-            Catálogo de{' '}
+            Iniciativas de{' '}
             <span className="text-gradient">Necesidades</span>
           </h1>
           <p className="dashboard__subtitle">
@@ -110,7 +104,7 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Empty State - No fichas at all */}
+        {/* Empty State */}
         {totalFichas === 0 && (
           <div className="dashboard__empty-state">
             <span className="dashboard__empty-icon">🏠</span>
@@ -125,26 +119,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* SECTION 1: Collaborative Needs */}
-        {sortedCollaborative.length > 0 && (
-          <>
-            <div className="section-header">
-              <h2 className="section-title">
-                🤲 Necesidades Colaborativas
-                <span className="section-count">
-                  — Dona lo que quieras para llenar la meta
-                </span>
-              </h2>
-            </div>
-            <div className="cards-grid">
-              {sortedCollaborative.map(need => (
-                <NeedCard key={need.id} need={need} onDonate={handleDonate} />
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* SECTION 2: Gift Needs */}
+        {/* Gift Needs */}
         {sortedGifts.length > 0 && (
           <>
             <div className="section-header">
@@ -163,7 +138,7 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* SECTION 3: Donation Needs */}
+        {/* Donation Needs */}
         {sortedDonations.length > 0 && (
           <>
             <div className="section-header">

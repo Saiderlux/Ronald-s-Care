@@ -1,6 +1,8 @@
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { FichasProvider } from './context/FichasContext.jsx'
+import { InventoryProvider } from './context/InventoryContext.jsx'
+import { InvoiceProvider } from './context/InvoiceContext.jsx'
 import Navbar from './components/Navbar.jsx'
 import AdminRoute from './components/AdminRoute.jsx'
 import Landing from './pages/Landing.jsx'
@@ -8,8 +10,11 @@ import Dashboard from './pages/Dashboard.jsx'
 import Impact from './pages/Impact.jsx'
 import ThankYouEmails from './pages/ThankYouEmails.jsx'
 import Voluntariado from './pages/Voluntariado.jsx'
+import DonacionEspecie from './pages/DonacionEspecie.jsx'
+import Apadrinamiento from './pages/Apadrinamiento.jsx'
 import AdminLogin from './pages/AdminLogin.jsx'
 import AdminDashboard from './pages/AdminDashboard.jsx'
+import AdminInventory from './pages/AdminInventory.jsx'
 
 function AppContent() {
   const location = useLocation()
@@ -17,7 +22,6 @@ function AppContent() {
 
   return (
     <>
-      {/* Navbar solo se muestra en rutas públicas */}
       {!isAdminRoute && <Navbar />}
       <Routes>
         {/* Rutas Públicas */}
@@ -26,6 +30,8 @@ function AppContent() {
         <Route path="/impacto" element={<Impact />} />
         <Route path="/correos" element={<ThankYouEmails />} />
         <Route path="/voluntariado" element={<Voluntariado />} />
+        <Route path="/donar-especie" element={<DonacionEspecie />} />
+        <Route path="/apadrinamiento" element={<Apadrinamiento />} />
 
         {/* Rutas de Admin */}
         <Route path="/admin" element={<AdminLogin />} />
@@ -34,6 +40,14 @@ function AppContent() {
           element={
             <AdminRoute>
               <AdminDashboard />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/inventario"
+          element={
+            <AdminRoute>
+              <AdminInventory />
             </AdminRoute>
           }
         />
@@ -57,7 +71,11 @@ function App() {
   return (
     <AuthProvider>
       <FichasProvider>
-        <AppContent />
+        <InventoryProvider>
+          <InvoiceProvider>
+            <AppContent />
+          </InvoiceProvider>
+        </InventoryProvider>
       </FichasProvider>
     </AuthProvider>
   )

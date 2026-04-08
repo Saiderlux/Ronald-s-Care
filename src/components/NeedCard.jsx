@@ -32,13 +32,16 @@ function SponsorBanner({ sponsor }) {
 // FICHA TIPO 1: COLABORATIVA (barra de progreso)
 // =============================================
 function CollaborativeCard({ need, onDonate }) {
-  const percentage = Math.round((need.currentAmount / need.goalAmount) * 100)
-  const isCompleted = need.currentAmount >= need.goalAmount
-  const remaining = need.goalAmount - need.currentAmount
+  const goalAmount = need.goal_amount || 0
+  const currentAmount = need.current_amount || 0
+  const percentage = goalAmount > 0 ? Math.round((currentAmount / goalAmount) * 100) : 0
+  const isCompleted = need.status === 'completed' || (goalAmount > 0 && currentAmount >= goalAmount)
+  const remaining = goalAmount - currentAmount
+  const sponsor = need.sponsor_json ? JSON.parse(need.sponsor_json) : null
 
   return (
     <article
-      className={`need-card ${need.isUrgent ? 'urgent' : ''}`}
+      className={`need-card ${need.is_urgent ? 'urgent' : ''}`}
       id={`need-card-${need.id}`}
       style={{ animationDelay: `${(need.id % 10) * 0.1}s` }}
     >
@@ -55,9 +58,9 @@ function CollaborativeCard({ need, onDonate }) {
         >
           {need.emoji}
         </div>
-        {need.isUrgent && (
+        {need.is_urgent === 1 && (
           <span className="need-card__urgent-badge">
-            🔴 Urgente — {need.deadline}
+            🔴 Urgente {need.deadline ? `— ${need.deadline}` : ''}
           </span>
         )}
         <span className="need-card__category-badge">
@@ -65,25 +68,36 @@ function CollaborativeCard({ need, onDonate }) {
         </span>
       </div>
 
-      <SponsorBanner sponsor={need.sponsor} />
+      <SponsorBanner sponsor={sponsor} />
 
       <div className="need-card__body">
-        <span className="need-card__type-label collaborative">🤲 Colaborativa</span>
+        <span className="need-card__type-label collaborative">
+          {need.type === 'donation' ? '💰 Donación' : '🤲 Colaborativa'}
+        </span>
+        {need.auto_generated === 1 && (
+          <span style={{
+            display: 'inline-block', marginLeft: 8, padding: '2px 8px',
+            background: '#E3F2FD', color: '#1565C0', borderRadius: '6px',
+            fontSize: '10px', fontWeight: 700,
+          }}>
+            🤖 Auto-generada
+          </span>
+        )}
         <h3 className="need-card__title">{need.title}</h3>
         <p className="need-card__description">{need.description}</p>
 
         <div className="progress">
           <div className="progress__header">
             <span className="progress__amount">
-              ${need.currentAmount.toLocaleString()}
+              ${currentAmount.toLocaleString()}
             </span>
             <span className="progress__goal">
-              de ${need.goalAmount.toLocaleString()} MXN
+              de ${goalAmount.toLocaleString()} MXN
             </span>
           </div>
           <div className="progress__bar">
             <div
-              className={`progress__fill ${isCompleted ? 'completed' : ''} ${need.sponsor?.type === 'matching' ? 'has-matching' : ''}`}
+              className={`progress__fill ${isCompleted ? 'completed' : ''} ${sponsor?.type === 'matching' ? 'has-matching' : ''}`}
               style={{ width: `${Math.min(percentage, 100)}%` }}
             />
           </div>
@@ -92,9 +106,9 @@ function CollaborativeCard({ need, onDonate }) {
               ? '✅ ¡Meta alcanzada!'
               : `${percentage}% — Faltan $${remaining.toLocaleString()}`}
           </p>
-          {need.sponsor?.type === 'matching' && !isCompleted && (
+          {sponsor?.type === 'matching' && !isCompleted && (
             <p className="progress__matching">
-              🤝 {need.sponsor.name} iguala cada peso que dones
+              🤝 {sponsor.name} iguala cada peso que dones
             </p>
           )}
         </div>
@@ -102,7 +116,7 @@ function CollaborativeCard({ need, onDonate }) {
         <div className="need-card__footer">
           <span className="need-card__donors">
             <span className="need-card__donors-icon">👥</span>
-            {need.donorsCount} donantes
+            {need.donors_count || 0} donantes
           </span>
           <button
             className={`need-card__btn ${isCompleted ? 'completed-btn' : ''}`}
@@ -121,13 +135,18 @@ function CollaborativeCard({ need, onDonate }) {
 // FICHA TIPO 2: REGALO (monto fijo, unidades)
 // =============================================
 function GiftCard({ need, onDonate }) {
-  const isCompleted = need.unitsDonated >= need.totalUnits
-  const remaining = need.totalUnits - need.unitsDonated
-  const stockPercentage = (need.unitsDonated / need.totalUnits) * 100
+  const unitsDonated = need.units_donated || 0
+  const totalUnits = need.total_units || 0
+  const unitPrice = need.unit_price || 0
+  const unitLabel = need.unit_label || 'unidades'
+  const isCompleted = need.status === 'completed' || unitsDonated >= totalUnits
+  const remaining = totalUnits - unitsDonated
+  const stockPercentage = totalUnits > 0 ? (unitsDonated / totalUnits) * 100 : 0
+  const sponsor = need.sponsor_json ? JSON.parse(need.sponsor_json) : null
 
   return (
     <article
-      className={`need-card ${need.isUrgent ? 'urgent' : ''}`}
+      className={`need-card ${need.is_urgent ? 'urgent' : ''}`}
       id={`need-card-${need.id}`}
       style={{ animationDelay: `${(need.id % 10) * 0.1}s` }}
     >
@@ -144,7 +163,7 @@ function GiftCard({ need, onDonate }) {
         >
           {need.emoji}
         </div>
-        {need.isUrgent && (
+        {need.is_urgent === 1 && (
           <span className="need-card__urgent-badge">🔴 Urgente</span>
         )}
         <span className="need-card__category-badge">
@@ -152,7 +171,7 @@ function GiftCard({ need, onDonate }) {
         </span>
       </div>
 
-      <SponsorBanner sponsor={need.sponsor} />
+      <SponsorBanner sponsor={sponsor} />
 
       <div className="need-card__body">
         <span className="need-card__type-label gift">🎁 Regalo directo</span>
@@ -161,16 +180,16 @@ function GiftCard({ need, onDonate }) {
 
         <div className="gift-info">
           <div className="gift-info__price">
-            ${need.unitPrice.toLocaleString()} MXN
+            ${unitPrice.toLocaleString()} MXN
           </div>
           <div className="gift-info__price-label">
-            Precio fijo por {need.unitLabel.slice(0, -1)}
+            Precio fijo por {unitLabel.endsWith('s') ? unitLabel.slice(0, -1) : unitLabel}
           </div>
 
           <div className="gift-info__stock">
             <span className="gift-info__stock-number">{remaining}</span>
             <span className="gift-info__stock-label">
-              de {need.totalUnits} {need.unitLabel} disponibles
+              de {totalUnits} {unitLabel} disponibles
             </span>
             <div className="gift-info__stock-bar">
               <div
@@ -184,7 +203,7 @@ function GiftCard({ need, onDonate }) {
         <div className="need-card__footer">
           <span className="need-card__donors">
             <span className="need-card__donors-icon">🎁</span>
-            {need.unitsDonated} de {need.totalUnits} donados
+            {unitsDonated} de {totalUnits} donados
           </span>
           <button
             className={`need-card__btn ${isCompleted ? 'completed-btn' : 'gift-btn'}`}
@@ -209,6 +228,10 @@ function getGradientByCategory(category) {
     higiene: '#e0f2f1 0%, #b2dfdb 50%, #80cbc4 100%',
     bienestar: '#fff3e0 0%, #ffe0b2 50%, #ffcc80 100%',
     educacion: '#f3e5f5 0%, #ce93d8 50%, #ba68c8 100%',
+    salud: '#e8f5e9 0%, #a5d6a7 50%, #81c784 100%',
+    limpieza: '#e0f7fa 0%, #80deea 50%, #4dd0e1 100%',
+    ropa: '#fce4ec 0%, #f8bbd0 50%, #ef9a9a 100%',
+    alimentos: '#fce4ec 0%, #f8bbd0 50%, #f48fb1 100%',
   }
   return gradients[category] || '#f5f5f5 0%, #e0e0e0 100%'
 }
@@ -220,6 +243,11 @@ function getCategoryLabel(category) {
     higiene: '🧴 Higiene',
     bienestar: '💛 Bienestar',
     educacion: '📚 Educación',
+    salud: '🏥 Salud',
+    limpieza: '🧹 Limpieza',
+    ropa: '👕 Ropa',
+    alimentos: '🍕 Alimentos',
+    otros: '📦 Otros',
   }
   return labels[category] || category
 }

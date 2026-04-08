@@ -1,23 +1,17 @@
 import { useState } from 'react'
 import confetti from 'canvas-confetti'
 import { useFichas } from '../context/FichasContext.jsx'
+import { volunteersApi } from '../api.js'
 
 export default function Voluntariado() {
-  const { getCollaborativeNeeds, enrollVolunteer } = useFichas()
+  const { getCollaborativeNeeds, refreshFichas } = useFichas()
   const volunteerEvents = getCollaborativeNeeds()
 
   const [selectedRole, setSelectedRole] = useState(null)
   const [formData, setFormData] = useState({
-    nombre: '',
-    email: '',
-    telefono: '',
-    edad: '',
-    motivacion: '',
-    experiencia: '',
-    disponibilidad: 'manana',
-    tipo: 'individual',
-    corporateSlots: '',
-    empresa: '',
+    nombre: '', email: '', telefono: '', edad: '',
+    motivacion: '', disponibilidad: 'manana',
+    tipo: 'individual', corporateSlots: '', empresa: '',
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
@@ -26,39 +20,39 @@ export default function Voluntariado() {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
     setIsSubmitting(true)
-    setTimeout(() => {
-      const slots = formData.tipo === 'empresarial'
-        ? parseInt(formData.corporateSlots) || 1
-        : 1
-      enrollVolunteer(selectedRole.id, slots)
+    try {
+      const slots = formData.tipo === 'empresarial' ? parseInt(formData.corporateSlots) || 1 : 1
+      await volunteersApi.register({
+        ficha_id: selectedRole.id,
+        name: formData.nombre,
+        email: formData.email,
+        phone: formData.telefono || null,
+        age: parseInt(formData.edad) || null,
+        motivation: formData.motivacion,
+        reg_type: formData.tipo,
+        company_name: formData.empresa || null,
+        slots: slots,
+      })
+      refreshFichas()
       setIsSubmitting(false)
       setIsSuccess(true)
-      confetti({
-        particleCount: 120,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#DA291C', '#FFC72C', '#27AA5E'],
-      })
-    }, 1500)
+      confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 }, colors: ['#DA291C', '#FFC72C', '#27AA5E'] })
+    } catch (err) {
+      alert('Error: ' + err.message)
+      setIsSubmitting(false)
+    }
   }
 
   function handleClose() {
     setSelectedRole(null)
     setIsSuccess(false)
     setFormData({
-      nombre: '',
-      email: '',
-      telefono: '',
-      edad: '',
-      motivacion: '',
-      experiencia: '',
-      disponibilidad: 'manana',
-      tipo: 'individual',
-      corporateSlots: '',
-      empresa: '',
+      nombre: '', email: '', telefono: '', edad: '',
+      motivacion: '', disponibilidad: 'manana',
+      tipo: 'individual', corporateSlots: '', empresa: '',
     })
     document.body.style.overflow = ''
   }
@@ -72,11 +66,9 @@ export default function Voluntariado() {
   return (
     <main className="dashboard" id="voluntariado-page">
       <div className="container">
-        {/* Header */}
         <div className="dashboard__header">
           <h1 className="dashboard__title">
-            Dona tu{' '}
-            <span className="text-gradient">Tiempo</span>
+            Dona tu{' '}<span className="text-gradient">Tiempo</span>
           </h1>
           <p className="dashboard__subtitle">
             No solo de dinero vive la Casa. Tu tiempo, talento y cariño
@@ -84,103 +76,72 @@ export default function Voluntariado() {
           </p>
         </div>
 
-        {/* Empty State */}
         {volunteerEvents.length === 0 && (
           <div className="dashboard__empty-state">
             <span className="dashboard__empty-icon">🤲</span>
-            <h3 className="dashboard__empty-title">
-              Aún no hay eventos de voluntariado
-            </h3>
+            <h3 className="dashboard__empty-title">Aún no hay eventos de voluntariado</h3>
             <p className="dashboard__empty-text">
-              El equipo de la Fundación está organizando nuevos eventos.
-              <br />
+              El equipo de la Fundación está organizando nuevos eventos.<br />
               ¡Vuelve pronto para ver cómo puedes donar tu tiempo!
             </p>
           </div>
         )}
 
-        {/* Volunteer Grid */}
         <div className="cards-grid">
           {volunteerEvents.map((event, index) => {
-            const spotsLeft = event.maxCapacity - (event.currentEnrolled || 0)
+            const spotsLeft = event.max_capacity - (event.current_enrolled || 0)
             const isFull = spotsLeft <= 0
-            const fillPct = ((event.currentEnrolled || 0) / event.maxCapacity) * 100
+            const fillPct = ((event.current_enrolled || 0) / event.max_capacity) * 100
 
             return (
-              <article
-                className={`need-card ${event.isUrgent ? 'urgent' : ''}`}
-                key={event.id}
-                style={{ animationDelay: `${index * 0.1}s` }}
-              >
+              <article className={`need-card ${event.is_urgent ? 'urgent' : ''}`}
+                key={event.id} style={{ animationDelay: `${index * 0.1}s` }}>
                 <div style={{ position: 'relative' }}>
-                  <div
-                    className="need-card__image"
-                    style={{
-                      background: `linear-gradient(135deg, ${getGradient(event.category)})`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '4rem',
-                    }}
-                  >
+                  <div className="need-card__image" style={{
+                    background: `linear-gradient(135deg, ${getGradient(event.category)})`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '4rem',
+                  }}>
                     {event.emoji}
                   </div>
-                  {event.isUrgent && (
+                  {event.is_urgent === 1 && (
                     <span className="need-card__urgent-badge">
                       🔴 Urgente {event.deadline ? `— ${event.deadline}` : ''}
                     </span>
                   )}
                 </div>
-
                 <div className="need-card__body">
                   <span className="need-card__type-label volunteer-label">🤲 Voluntariado</span>
                   <h3 className="need-card__title">{event.title}</h3>
                   <p className="need-card__description" style={{ WebkitLineClamp: 3 }}>
                     {event.description}
                   </p>
-
-                  {/* Info Row */}
                   <div className="vol-info-row">
-                    {event.eventDate && (
+                    {event.event_date && (
                       <div className="vol-info-item">
-                        <span className="vol-info-icon">📅</span>
-                        <span>{event.eventDate}</span>
+                        <span className="vol-info-icon">📅</span><span>{event.event_date}</span>
                       </div>
                     )}
-                    {event.eventLocation && (
+                    {event.event_location && (
                       <div className="vol-info-item">
-                        <span className="vol-info-icon">📍</span>
-                        <span>{event.eventLocation}</span>
+                        <span className="vol-info-icon">📍</span><span>{event.event_location}</span>
                       </div>
                     )}
                   </div>
-
-                  {/* Spots */}
                   <div className="vol-spots">
                     <div className="vol-spots__bar">
-                      <div
-                        className="vol-spots__fill"
-                        style={{ width: `${fillPct}%` }}
-                      />
+                      <div className="vol-spots__fill" style={{ width: `${fillPct}%` }} />
                     </div>
                     <span className="vol-spots__text">
-                      {isFull
-                        ? '✅ ¡Cupo lleno!'
-                        : `${spotsLeft} de ${event.maxCapacity} lugares disponibles`
-                      }
+                      {isFull ? '✅ ¡Cupo lleno!' : `${spotsLeft} de ${event.max_capacity} lugares disponibles`}
                     </span>
                   </div>
-
                   <div className="need-card__footer">
                     <span className="need-card__donors">
                       <span className="need-card__donors-icon">❤️</span>
-                      {event.currentEnrolled || 0} voluntarios
+                      {event.current_enrolled || 0} voluntarios
                     </span>
-                    <button
-                      className={`need-card__btn ${isFull ? 'completed-btn' : 'volunteer-btn'}`}
-                      onClick={() => handleOpenForm(event)}
-                      disabled={isFull}
-                    >
+                    <button className={`need-card__btn ${isFull ? 'completed-btn' : 'volunteer-btn'}`}
+                      onClick={() => handleOpenForm(event)} disabled={isFull}>
                       {isFull ? '✅ Cupo Lleno' : 'Inscribirme →'}
                     </button>
                   </div>
@@ -191,9 +152,7 @@ export default function Voluntariado() {
         </div>
       </div>
 
-      {/* =============================================
-          FORMULARIO MODAL
-          ============================================= */}
+      {/* Modal */}
       {selectedRole && (
         <div className="modal-overlay" onClick={handleClose}>
           <div className="modal vol-modal" onClick={e => e.stopPropagation()}>
@@ -204,29 +163,19 @@ export default function Voluntariado() {
                   ¡Bienvenido al <span className="text-gradient">equipo</span>!
                 </h2>
                 <p className="success-state__message">
-                  Tu inscripción para <strong>{selectedRole.title}</strong> fue
-                  registrada. El coordinador de la Casa Ronald McDonald te
-                  contactará pronto.
+                  Tu inscripción para <strong>{selectedRole.title}</strong> fue registrada.
+                  El coordinador te contactará pronto.
                 </p>
                 <div style={{
-                  background: '#F5F5F5',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  marginBottom: '20px',
-                  textAlign: 'left',
-                  border: '1px solid #E8E8E8',
+                  background: '#F5F5F5', borderRadius: '12px', padding: '16px',
+                  marginBottom: '20px', textAlign: 'left', border: '1px solid #E8E8E8',
                 }}>
                   <p style={{ fontSize: '0.8125rem', color: '#6B6B6B', lineHeight: 1.6 }}>
-                    📧 Recibirás un correo de confirmación en <strong>{formData.email || 'tu correo'}</strong>
-                    <br />
-                    📅 Fecha: <strong>{selectedRole.eventDate}</strong>
-                    <br />
-                    📍 Lugar: <strong>{selectedRole.eventLocation}</strong>
+                    📧 Correo de confirmación a <strong>{formData.email}</strong><br />
+                    📅 Fecha: <strong>{selectedRole.event_date}</strong><br />
+                    📍 Lugar: <strong>{selectedRole.event_location}</strong>
                     {formData.tipo === 'empresarial' && (
-                      <>
-                        <br />
-                        🏢 Empresa: <strong>{formData.empresa}</strong> — {formData.corporateSlots} lugares reservados
-                      </>
+                      <><br />🏢 Empresa: <strong>{formData.empresa}</strong> — {formData.corporateSlots} lugares</>
                     )}
                   </p>
                 </div>
@@ -241,146 +190,78 @@ export default function Voluntariado() {
                   <button className="modal__close" onClick={handleClose}>✕</button>
                 </div>
                 <div className="modal__body">
-                  {/* Event Info */}
                   <div className="modal__need-info">
                     <div className="modal__need-emoji">{selectedRole.emoji}</div>
                     <div>
                       <p className="modal__need-title">{selectedRole.title}</p>
                       <p className="modal__need-remaining">
-                        📅 {selectedRole.eventDate} · 📍 {selectedRole.eventLocation}
+                        📅 {selectedRole.event_date} · 📍 {selectedRole.event_location}
                       </p>
                     </div>
                   </div>
-
-                  {/* Tipo de Registro */}
                   <div className="vol-tipo-selector">
                     <label className={`vol-tipo-option ${formData.tipo === 'individual' ? 'active' : ''}`}>
-                      <input
-                        type="radio"
-                        name="tipo"
-                        value="individual"
-                        checked={formData.tipo === 'individual'}
-                        onChange={handleChange}
-                      />
+                      <input type="radio" name="tipo" value="individual"
+                        checked={formData.tipo === 'individual'} onChange={handleChange} />
                       <span>🧑 Individual</span>
                     </label>
                     <label className={`vol-tipo-option ${formData.tipo === 'empresarial' ? 'active' : ''}`}>
-                      <input
-                        type="radio"
-                        name="tipo"
-                        value="empresarial"
-                        checked={formData.tipo === 'empresarial'}
-                        onChange={handleChange}
-                      />
+                      <input type="radio" name="tipo" value="empresarial"
+                        checked={formData.tipo === 'empresarial'} onChange={handleChange} />
                       <span>🏢 Empresarial</span>
                     </label>
                   </div>
-
-                  {/* Form */}
                   <form className="vol-form" onSubmit={handleSubmit}>
                     {formData.tipo === 'empresarial' && (
                       <div className="vol-form__row">
                         <div className="vol-form__field">
-                          <label>Nombre de la empresa *</label>
-                          <input
-                            type="text"
-                            name="empresa"
-                            required
-                            placeholder="Ej. Comex, Liverpool"
-                            value={formData.empresa}
-                            onChange={handleChange}
-                          />
+                          <label>Empresa *</label>
+                          <input type="text" name="empresa" required placeholder="Comex, Liverpool..."
+                            value={formData.empresa} onChange={handleChange} />
                         </div>
                         <div className="vol-form__field">
-                          <label>Lugares a reservar *</label>
-                          <input
-                            type="number"
-                            name="corporateSlots"
-                            required
-                            min="1"
-                            max={selectedRole.maxCapacity - (selectedRole.currentEnrolled || 0)}
-                            placeholder="Ej. 15"
-                            value={formData.corporateSlots}
-                            onChange={handleChange}
-                          />
+                          <label>Lugares *</label>
+                          <input type="number" name="corporateSlots" required min="1"
+                            max={selectedRole.max_capacity - (selectedRole.current_enrolled || 0)}
+                            value={formData.corporateSlots} onChange={handleChange} />
                         </div>
                       </div>
                     )}
-
                     <div className="vol-form__row">
                       <div className="vol-form__field">
-                        <label>{formData.tipo === 'empresarial' ? 'Nombre del contacto *' : 'Nombre completo *'}</label>
-                        <input
-                          type="text"
-                          name="nombre"
-                          required
-                          placeholder="Ej. María González"
-                          value={formData.nombre}
-                          onChange={handleChange}
-                        />
+                        <label>{formData.tipo === 'empresarial' ? 'Contacto *' : 'Nombre *'}</label>
+                        <input type="text" name="nombre" required placeholder="María González"
+                          value={formData.nombre} onChange={handleChange} />
                       </div>
                       <div className="vol-form__field">
                         <label>Edad *</label>
-                        <input
-                          type="number"
-                          name="edad"
-                          required
-                          placeholder="18"
-                          min="16"
-                          max="99"
-                          value={formData.edad}
-                          onChange={handleChange}
-                        />
+                        <input type="number" name="edad" required min="16" max="99" placeholder="18"
+                          value={formData.edad} onChange={handleChange} />
                       </div>
                     </div>
-
                     <div className="vol-form__row">
                       <div className="vol-form__field">
-                        <label>Correo electrónico *</label>
-                        <input
-                          type="email"
-                          name="email"
-                          required
-                          placeholder="ejemplo@correo.com"
-                          value={formData.email}
-                          onChange={handleChange}
-                        />
+                        <label>Correo *</label>
+                        <input type="email" name="email" required placeholder="ejemplo@correo.com"
+                          value={formData.email} onChange={handleChange} />
                       </div>
                       <div className="vol-form__field">
                         <label>Teléfono</label>
-                        <input
-                          type="tel"
-                          name="telefono"
-                          placeholder="55 1234 5678"
-                          value={formData.telefono}
-                          onChange={handleChange}
-                        />
+                        <input type="tel" name="telefono" placeholder="55 1234 5678"
+                          value={formData.telefono} onChange={handleChange} />
                       </div>
                     </div>
-
                     <div className="vol-form__field">
                       <label>¿Por qué quieres ser voluntario? *</label>
-                      <textarea
-                        name="motivacion"
-                        rows="3"
-                        required
-                        placeholder="Cuéntanos qué te motiva a donar tu tiempo..."
-                        value={formData.motivacion}
-                        onChange={handleChange}
-                      />
+                      <textarea name="motivacion" rows="3" required
+                        placeholder="Cuéntanos qué te motiva..."
+                        value={formData.motivacion} onChange={handleChange} />
                     </div>
-
-                    <button
-                      type="submit"
-                      className="pay-btn volunteer-submit"
-                      disabled={isSubmitting}
-                    >
-                      {isSubmitting
-                        ? '⏳ Enviando inscripción...'
+                    <button type="submit" className="pay-btn volunteer-submit" disabled={isSubmitting}>
+                      {isSubmitting ? '⏳ Enviando...'
                         : formData.tipo === 'empresarial'
                           ? `🏢 Reservar ${formData.corporateSlots || ''} lugares`
-                          : `🙋 Inscribirme en ${selectedRole.title}`
-                      }
+                          : `🙋 Inscribirme en ${selectedRole.title}`}
                     </button>
                   </form>
                 </div>
@@ -402,12 +283,9 @@ function getGradient(category) {
     recreacion: '#FFE0B2 0%, #FFCC80 50%, #FFB74D 100%',
     educacion_vol: '#f3e5f5 0%, #ce93d8 50%, #ba68c8 100%',
     acompanamiento: '#E8F5E9 0%, #A5D6A7 50%, #81C784 100%',
-    // Fallbacks para categorías antiguas
-    entretenimiento: '#FFE0B2 0%, #FFCC80 50%, #FFB74D 100%',
     alimentacion: '#fce4ec 0%, #f8bbd0 50%, #f48fb1 100%',
     educacion: '#f3e5f5 0%, #ce93d8 50%, #ba68c8 100%',
     bienestar: '#E8F5E9 0%, #A5D6A7 50%, #81C784 100%',
-    operaciones: '#E3F2FD 0%, #90CAF9 50%, #64B5F6 100%',
   }
   return gradients[category] || '#f5f5f5 0%, #e0e0e0 100%'
 }

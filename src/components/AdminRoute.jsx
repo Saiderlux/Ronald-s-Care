@@ -2,9 +2,11 @@ import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function AdminRoute({ children }) {
-  const { isAuthenticated, isAdmin } = useAuth()
+  const { isAuthenticated, loading } = useAuth()
 
-  if (!isAuthenticated || !isAdmin) {
+  if (loading) return null
+
+  if (!isAuthenticated) {
     return <Navigate to="/admin" replace />
   }
 

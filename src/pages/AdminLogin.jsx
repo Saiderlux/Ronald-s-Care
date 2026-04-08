@@ -1,18 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext.jsx'
+import { useAuth, ROLE_INFO } from '../context/AuthContext.jsx'
 
 export default function AdminLogin() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const { login, isAdmin } = useAuth()
+  const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
 
-  // Si ya está autenticado, redirigir al dashboard
-  if (isAdmin) {
-    navigate('/admin/dashboard', { replace: true })
+  // Si ya está autenticado, redirect
+  if (isAuthenticated) {
+    navigate('/admin/dashboard')
     return null
   }
 
@@ -20,15 +20,10 @@ export default function AdminLogin() {
     e.preventDefault()
     setError('')
     setIsLoading(true)
-
-    // Simular un pequeño delay de "verificación"
-    await new Promise(r => setTimeout(r, 600))
-
-    const result = login(email, password)
+    const result = await login(email, password)
     setIsLoading(false)
-
     if (result.success) {
-      navigate('/admin/dashboard', { replace: true })
+      navigate('/admin/dashboard')
     } else {
       setError(result.error)
     }
@@ -38,72 +33,58 @@ export default function AdminLogin() {
     <main className="admin-login" id="admin-login">
       <div className="admin-login__card">
         <div className="admin-login__header">
-          <div className="admin-login__icon">🔒</div>
-          <h1 className="admin-login__title">Panel de Administración</h1>
-          <p className="admin-login__subtitle">
-            Acceso exclusivo para el equipo de la Fundación
-          </p>
+          <span className="admin-login__icon">🔐</span>
+          <h1 className="admin-login__title">Panel Administrativo</h1>
+          <p className="admin-login__subtitle">Conexión Tangible</p>
         </div>
 
         <form className="admin-login__form" onSubmit={handleSubmit}>
-          {error && (
-            <div className="admin-login__error" id="login-error">
-              <span>⚠️</span> {error}
-            </div>
-          )}
+          {error && <div className="admin-login__error">{error}</div>}
 
           <div className="admin-login__field">
-            <label htmlFor="admin-email" className="admin-login__label">
-              Correo electrónico
-            </label>
-            <input
-              id="admin-email"
-              type="email"
-              className="admin-login__input"
-              placeholder="admin@ronald.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              autoFocus
-            />
+            <label htmlFor="admin-email">Correo electrónico</label>
+            <input id="admin-email" type="email" required
+              placeholder="tu@ronald.com" value={email}
+              onChange={e => setEmail(e.target.value)} />
           </div>
 
           <div className="admin-login__field">
-            <label htmlFor="admin-password" className="admin-login__label">
-              Contraseña
-            </label>
-            <input
-              id="admin-password"
-              type="password"
-              className="admin-login__input"
-              placeholder="••••••••"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-            />
+            <label htmlFor="admin-password">Contraseña</label>
+            <input id="admin-password" type="password" required
+              placeholder="••••••" value={password}
+              onChange={e => setPassword(e.target.value)} />
           </div>
 
-          <button
-            type="submit"
-            className="admin-login__submit"
-            id="admin-submit"
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <span className="admin-login__spinner">⏳</span>
-            ) : (
-              'Iniciar Sesión'
-            )}
+          <button type="submit" className="admin-login__submit" disabled={isLoading}>
+            {isLoading ? '⏳ Verificando...' : 'Iniciar Sesión →'}
           </button>
         </form>
 
-        <div className="admin-login__footer">
-          <button
-            className="admin-login__back"
-            onClick={() => navigate('/')}
-          >
-            ← Volver al sitio público
-          </button>
+        {/* Role hints */}
+        <div className="admin-login__roles">
+          <p className="admin-login__roles-title">👥 Usuarios de prueba:</p>
+          <div className="admin-login__roles-grid">
+            {Object.entries(ROLE_INFO).map(([role, info]) => {
+              const emails = {
+                ADMIN: 'admin@ronald.com / admin123',
+                IDENTIFIER: 'identificador@ronald.com / id123',
+                FINANCE: 'finanzas@ronald.com / fin123',
+                COMMUNICATOR: 'comunicacion@ronald.com / com123',
+              }
+              return (
+                <button key={role} type="button" className="admin-login__role-hint"
+                  onClick={() => {
+                    const [e, p] = emails[role].split(' / ')
+                    setEmail(e)
+                    setPassword(p)
+                  }}
+                  style={{ borderColor: info.color }}>
+                  <span style={{ color: info.color, fontWeight: 700 }}>{info.label}</span>
+                  <span className="admin-login__role-desc">{info.description}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
     </main>

@@ -1,10 +1,20 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import confetti from 'canvas-confetti'
-import { DONATION_AMOUNTS, donateToCollaborative, donateToGift } from '../data/mockData.js'
+import { useFichas } from '../context/FichasContext.jsx'
+
+const DONATION_AMOUNTS = [
+  { value: 20, label: '1 pasaje' },
+  { value: 50, label: '1 kit' },
+  { value: 100, label: '5 comidas' },
+  { value: 200, label: '1 tanque' },
+  { value: 500, label: '1 semana' },
+  { value: 1000, label: 'Padrino ⭐' },
+]
 
 export default function PaymentModal({ need, onClose, onDonationComplete }) {
   const navigate = useNavigate()
+  const { donateToFicha } = useFichas()
   const isGift = need.type === 'gift'
 
   // Collaborative state
@@ -21,52 +31,72 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
   const [donatedAmount, setDonatedAmount] = useState(0)
   const [donatedQuantity, setDonatedQuantity] = useState(0)
 
+  // Invoice step
+  const [showInvoiceStep, setShowInvoiceStep] = useState(false)
+  const [wantsInvoice, setWantsInvoice] = useState(false)
+  const [donorName, setDonorName] = useState('')
+  const [donorEmail, setDonorEmail] = useState('')
+
+  const sponsor = need.sponsor_json ? JSON.parse(need.sponsor_json) : null
   const remaining = isGift
-    ? need.totalUnits - need.unitsDonated
-    : need.goalAmount - need.currentAmount
+    ? need.total_units - need.units_donated
+    : (need.goal_amount || 0) - (need.current_amount || 0)
 
   const activeAmount = isGift
-    ? need.unitPrice * giftQuantity
+    ? (need.unit_price || 0) * giftQuantity
     : (selectedAmount || (customAmount ? parseInt(customAmount) : 0))
 
   function fireConfetti() {
-    confetti({
-      particleCount: 150,
-      spread: 80,
-      origin: { y: 0.6 },
-      colors: ['#DA291C', '#FFC72C', '#FF6F00', '#27AA5E'],
-    })
+    confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#DA291C', '#FFC72C', '#FF6F00', '#27AA5E'] })
     setTimeout(() => {
       confetti({ particleCount: 80, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#DA291C', '#FFC72C'] })
       confetti({ particleCount: 80, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#FF6F00', '#27AA5E'] })
     }, 300)
   }
 
-  function handleDonate() {
+  async function handleDonate() {
     if (!activeAmount || activeAmount <= 0) return
     setIsProcessing(true)
 
-    setTimeout(() => {
-      let updatedNeed
-      if (isGift) {
-        updatedNeed = donateToGift(need.id, giftQuantity)
-        setDonatedQuantity(giftQuantity)
-        setDonatedAmount(need.unitPrice * giftQuantity)
-        // Check if this donation completed all units
-        setDidComplete(updatedNeed.unitsDonated >= updatedNeed.totalUnits)
-      } else {
-        const finalAmount = Math.min(activeAmount, remaining)
-        updatedNeed = donateToCollaborative(need.id, finalAmount)
-        setDonatedAmount(finalAmount)
-        // Check if this donation completed the goal
-        setDidComplete(updatedNeed.currentAmount >= updatedNeed.goalAmount)
+    try {
+      const donationData = {
+        donor_name: donorName || 'Anónimo',
+        donor_email: donorEmail || null,
+        wants_invoice: wantsInvoice,
       }
 
-      setIsProcessing(false)
+      if (isGift) {
+        donationData.quantity = giftQuantity
+        donationData.amount = need.unit_price * giftQuantity
+        setDonatedQuantity(giftQuantity)
+        setDonatedAmount(need.unit_price * giftQuantity)
+      } else {
+        const finalAmount = Math.min(activeAmount, remaining)
+        donationData.amount = finalAmount
+        setDonatedAmount(finalAmount)
+      }
+
+      const updatedNeed = await donateToFicha(need.id, donationData)
+
+      if (isGift) {
+        setDidComplete(updatedNeed.units_donated >= updatedNeed.total_units)
+      } else {
+        setDidComplete(updatedNeed.goal_amount > 0 && updatedNeed.current_amount >= updatedNeed.goal_amount)
+      }
+
       setIsSuccess(true)
       fireConfetti()
-      onDonationComplete(updatedNeed)
-    }, 1500)
+      if (onDonationComplete) onDonationComplete(updatedNeed)
+    } catch (err) {
+      alert('Error al donar: ' + err.message)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  function handleProceedToDonate() {
+    setShowInvoiceStep(false)
+    handleDonate()
   }
 
   function handleSelectAmount(value) {
@@ -99,8 +129,8 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
   // SUCCESS STATE
   // =============================================
   if (isSuccess) {
-    const matchText = need.sponsor?.type === 'matching'
-      ? ` ${need.sponsor.name} igualó tu donación, ¡así que el impacto real es el doble!`
+    const matchText = sponsor?.type === 'matching'
+      ? ` ${sponsor.name} igualó tu donación, ¡así que el impacto real es el doble!`
       : ''
 
     return (
@@ -117,7 +147,7 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
             <p className="success-state__message">
               {isGift ? (
                 <>
-                  Donaste <strong>{donatedQuantity} {need.unitLabel}</strong> (${donatedAmount.toLocaleString()} MXN)
+                  Donaste <strong>{donatedQuantity} {need.unit_label}</strong> (${donatedAmount.toLocaleString()} MXN)
                   para "{need.title}".{matchText}
                 </>
               ) : (
@@ -128,58 +158,25 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
               )}
             </p>
 
-            {/* EMAIL PREVIEW when card is completed */}
+            {wantsInvoice && (
+              <div style={{
+                background: '#e8f5e9', borderRadius: '12px', padding: '12px 16px',
+                marginBottom: '16px', fontSize: '0.875rem', color: '#2e7d32',
+              }}>
+                🧾 Tu solicitud de factura fue registrada. Recibirás tu CFDI por correo.
+              </div>
+            )}
+
             {didComplete && (
               <div style={{
-                background: '#F5F5F5',
-                borderRadius: '12px',
-                padding: '16px',
-                marginBottom: '20px',
-                textAlign: 'left',
-                border: '1px solid #E8E8E8',
-                animation: 'fadeInUp 0.5s ease-out 0.3s backwards',
+                background: '#F5F5F5', borderRadius: '12px', padding: '16px',
+                marginBottom: '20px', textAlign: 'left', border: '1px solid #E8E8E8',
               }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginBottom: '10px',
-                }}>
-                  <span style={{
-                    background: '#DA291C',
-                    color: 'white',
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '14px',
-                  }}>📧</span>
-                  <div>
-                    <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#292929' }}>
-                      Correo enviado a tu bandeja
-                    </p>
-                    <p style={{ fontSize: '0.65rem', color: '#9E9E9E' }}>
-                      Conexión Tangible · Ahora
-                    </p>
-                  </div>
-                </div>
-                <p style={{
-                  fontSize: '0.8rem',
-                  fontWeight: 700,
-                  color: '#292929',
-                  marginBottom: '4px',
-                }}>
+                <p style={{ fontSize: '0.8rem', fontWeight: 700, color: '#292929', marginBottom: '4px' }}>
                   🎉 ¡Meta cumplida! "{need.title}"
                 </p>
-                <p style={{
-                  fontSize: '0.75rem',
-                  color: '#6B6B6B',
-                  lineHeight: 1.5,
-                }}>
-                  Gracias a tu donación de ${donatedAmount.toLocaleString()} y a {need.donorsCount} donantes,
-                  esta necesidad fue cubierta. Te compartiremos el resultado cuando el recurso sea utilizado.
+                <p style={{ fontSize: '0.75rem', color: '#6B6B6B', lineHeight: 1.5 }}>
+                  El equipo de comunicación preparará un correo de agradecimiento con prueba de uso.
                 </p>
               </div>
             )}
@@ -195,6 +192,53 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // =============================================
+  // INVOICE STEP
+  // =============================================
+  if (showInvoiceStep) {
+    return (
+      <div className="modal-overlay" onClick={handleClose}>
+        <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className="modal__header">
+            <h2 className="modal__title">🧾 ¿Deseas factura?</h2>
+            <button className="modal__close" onClick={handleClose}>✕</button>
+          </div>
+          <div className="modal__body">
+            <p style={{ marginBottom: '20px', color: '#6B6B6B', lineHeight: 1.6 }}>
+              Tu donación de <strong>${activeAmount.toLocaleString()} MXN</strong> puede ser deducible de impuestos.
+              Puedes proporcionar tus datos ahora o después.
+            </p>
+            <div className="vol-form__field" style={{ marginBottom: '12px' }}>
+              <label>Tu nombre (opcional)</label>
+              <input type="text" placeholder="Para personalizar tu agradecimiento"
+                value={donorName} onChange={e => setDonorName(e.target.value)} />
+            </div>
+            <div className="vol-form__field" style={{ marginBottom: '20px' }}>
+              <label>Correo electrónico (opcional)</label>
+              <input type="email" placeholder="Para recibir tu CFDI y agradecimiento"
+                value={donorEmail} onChange={e => setDonorEmail(e.target.value)} />
+            </div>
+            <div className="vol-tipo-selector" style={{ marginBottom: '20px' }}>
+              <label className={`vol-tipo-option ${wantsInvoice ? 'active' : ''}`}>
+                <input type="radio" checked={wantsInvoice}
+                  onChange={() => setWantsInvoice(true)} />
+                <span>🧾 Sí, quiero factura</span>
+              </label>
+              <label className={`vol-tipo-option ${!wantsInvoice ? 'active' : ''}`}>
+                <input type="radio" checked={!wantsInvoice}
+                  onChange={() => setWantsInvoice(false)} />
+                <span>👍 No por ahora</span>
+              </label>
+            </div>
+            <button className="pay-btn" onClick={handleProceedToDonate} disabled={isProcessing}>
+              {isProcessing ? '⏳ Procesando...' : `❤️ Confirmar Donación — $${activeAmount.toLocaleString()} MXN`}
+            </button>
           </div>
         </div>
       </div>
@@ -218,65 +262,39 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
               <div>
                 <p className="modal__need-title">{need.title}</p>
                 <p className="modal__need-remaining">
-                  ${need.unitPrice.toLocaleString()} MXN por {need.unitLabel.slice(0, -1)} · {remaining} disponibles
+                  ${(need.unit_price || 0).toLocaleString()} MXN por unidad · {remaining} disponibles
                 </p>
               </div>
             </div>
 
-            {need.sponsor?.type === 'matching' && (
+            {sponsor?.type === 'matching' && (
               <div style={{
-                padding: '12px 16px',
-                background: 'rgba(39,170,94,0.08)',
-                borderRadius: '12px',
-                marginBottom: '20px',
-                fontSize: '0.875rem',
-                color: '#27AA5E',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
+                padding: '12px 16px', background: 'rgba(39,170,94,0.08)',
+                borderRadius: '12px', marginBottom: '20px', fontSize: '0.875rem',
+                color: '#27AA5E', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px',
               }}>
-                🤝 {need.sponsor.name} iguala: por cada 1 que dones, ellos donan otro
+                🤝 {sponsor.name} iguala: por cada 1 que dones, ellos donan otro
               </div>
             )}
 
             <div className="quantity-selector">
-              <button
-                className="quantity-selector__btn"
-                disabled={giftQuantity <= 1}
-                onClick={() => setGiftQuantity(q => q - 1)}
-              >−</button>
+              <button className="quantity-selector__btn" disabled={giftQuantity <= 1}
+                onClick={() => setGiftQuantity(q => q - 1)}>−</button>
               <div className="quantity-selector__value">
                 <div className="quantity-selector__number">{giftQuantity}</div>
-                <div className="quantity-selector__label">{need.unitLabel}</div>
+                <div className="quantity-selector__label">{need.unit_label || 'unidades'}</div>
               </div>
-              <button
-                className="quantity-selector__btn"
-                disabled={giftQuantity >= remaining}
-                onClick={() => setGiftQuantity(q => q + 1)}
-              >+</button>
+              <button className="quantity-selector__btn" disabled={giftQuantity >= remaining}
+                onClick={() => setGiftQuantity(q => q + 1)}>+</button>
             </div>
             <div className="quantity-selector__total">
-              Total: <strong>${(need.unitPrice * giftQuantity).toLocaleString()} MXN</strong>
-              {need.sponsor?.type === 'matching' && (
-                <span style={{ color: '#27AA5E' }}> (+{giftQuantity} de {need.sponsor.name})</span>
-              )}
+              Total: <strong>${((need.unit_price || 0) * giftQuantity).toLocaleString()} MXN</strong>
             </div>
 
-            <button
-              className="pay-btn gift"
-              style={{ marginTop: '20px' }}
+            <button className="pay-btn gift" style={{ marginTop: '20px' }}
               disabled={isProcessing}
-              onClick={handleDonate}
-            >
-              {isProcessing ? (
-                <>⏳ Procesando...</>
-              ) : (
-                <>
-                  🎁 Regalar {giftQuantity} {need.unitLabel} — ${(need.unitPrice * giftQuantity).toLocaleString()}
-                  <span className="pay-btn__badge">SIMULADO</span>
-                </>
-              )}
+              onClick={() => setShowInvoiceStep(true)}>
+              🎁 Regalar {giftQuantity} {need.unit_label || 'unidades'} — ${((need.unit_price || 0) * giftQuantity).toLocaleString()}
             </button>
           </div>
         </div>
@@ -285,7 +303,7 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
   }
 
   // =============================================
-  // COLLABORATIVE MODAL
+  // COLLABORATIVE / DONATION MODAL
   // =============================================
   return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -305,30 +323,21 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
             </div>
           </div>
 
-          {need.sponsor?.type === 'matching' && (
+          {sponsor?.type === 'matching' && (
             <div style={{
-              padding: '12px 16px',
-              background: 'rgba(39,170,94,0.08)',
-              borderRadius: '12px',
-              marginBottom: '20px',
-              fontSize: '0.875rem',
-              color: '#27AA5E',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
+              padding: '12px 16px', background: 'rgba(39,170,94,0.08)',
+              borderRadius: '12px', marginBottom: '20px', fontSize: '0.875rem',
+              color: '#27AA5E', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px',
             }}>
-              🤝 {need.sponsor.name} duplica tu donación — ¡tu impacto vale x2!
+              🤝 {sponsor.name} duplica tu donación — ¡tu impacto vale x2!
             </div>
           )}
 
           <div className="amount-grid">
             {DONATION_AMOUNTS.map(({ value, label }) => (
-              <button
-                key={value}
+              <button key={value}
                 className={`amount-btn ${selectedAmount === value ? 'selected' : ''}`}
-                onClick={() => handleSelectAmount(value)}
-              >
+                onClick={() => handleSelectAmount(value)}>
                 ${value}
                 <span className="amount-btn__label">{label}</span>
               </button>
@@ -337,28 +346,15 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
 
           <div className="custom-amount">
             <label className="custom-amount__label">O escribe tu monto:</label>
-            <input
-              type="text"
-              className="custom-amount__input"
-              placeholder="$ Otro monto..."
-              value={customAmount}
-              onChange={handleCustomChange}
-            />
+            <input type="text" className="custom-amount__input"
+              placeholder="$ Otro monto..." value={customAmount}
+              onChange={handleCustomChange} />
           </div>
 
-          <button
-            className="pay-btn"
+          <button className="pay-btn"
             disabled={!activeAmount || activeAmount <= 0 || isProcessing}
-            onClick={handleDonate}
-          >
-            {isProcessing ? (
-              <>⏳ Procesando pago simulado...</>
-            ) : (
-              <>
-                ❤️ Donar {activeAmount > 0 ? `$${activeAmount.toLocaleString()} MXN` : ''}
-                {activeAmount > 0 && <span className="pay-btn__badge">SIMULADO</span>}
-              </>
-            )}
+            onClick={() => setShowInvoiceStep(true)}>
+            ❤️ Donar {activeAmount > 0 ? `$${activeAmount.toLocaleString()} MXN` : ''}
           </button>
         </div>
       </div>
