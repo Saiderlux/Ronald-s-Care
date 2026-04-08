@@ -2,6 +2,7 @@ import { useState } from 'react'
 import confetti from 'canvas-confetti'
 import { useFichas } from '../context/FichasContext.jsx'
 import { volunteersApi } from '../api.js'
+import { evaluarVoluntario } from '../services/aiService.js'
 
 export default function Voluntariado() {
   const { getCollaborativeNeeds, refreshFichas } = useFichas()
@@ -12,9 +13,11 @@ export default function Voluntariado() {
     nombre: '', email: '', telefono: '', edad: '',
     motivacion: '', disponibilidad: 'manana',
     tipo: 'individual', corporateSlots: '', empresa: '',
+    isPrevVolunteer: 'no', likesKids: 'si', habilidad: 'empatia'
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  const [evaluationResult, setEvaluationResult] = useState(null)
 
   function handleChange(e) {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }))
@@ -24,14 +27,34 @@ export default function Voluntariado() {
     e.preventDefault()
     setIsSubmitting(true)
     try {
+      if (formData.tipo === 'individual') {
+        const evaluacion = await evaluarVoluntario(formData);
+        if (evaluacion.estado === 'RECHAZADO') {
+          alert(`Resultado de Postulación: ${evaluacion.estado}\n\nMensaje: ${evaluacion.feedback}`);
+          setIsSubmitting(false);
+          handleClose();
+          return;
+        }
+        setEvaluationResult(evaluacion.feedback);
+      } else {
+        setEvaluationResult("Inscripción empresarial verificada automáticamente por convenios.");
+      }
+
       const slots = formData.tipo === 'empresarial' ? parseInt(formData.corporateSlots) || 1 : 1
+      let finalMotivation = formData.motivacion;
+      if (formData.tipo === 'individual') {
+        const hasVolunteered = formData.isPrevVolunteer === 'si' ? 'Sí' : 'No';
+        const likesKids = formData.likesKids === 'si' ? 'Sí' : 'No';
+        finalMotivation = `Disponibilidad: ${formData.disponibilidad} | Voluntario antes: ${hasVolunteered} | Le gustan los niños: ${likesKids} | Habilidad: ${formData.habilidad}\nMotivación: ${formData.motivacion}`;
+      }
+
       await volunteersApi.register({
         ficha_id: selectedRole.id,
         name: formData.nombre,
         email: formData.email,
         phone: formData.telefono || null,
         age: parseInt(formData.edad) || null,
-        motivation: formData.motivacion,
+        motivation: finalMotivation,
         reg_type: formData.tipo,
         company_name: formData.empresa || null,
         slots: slots,
@@ -49,10 +72,12 @@ export default function Voluntariado() {
   function handleClose() {
     setSelectedRole(null)
     setIsSuccess(false)
+    setEvaluationResult(null)
     setFormData({
       nombre: '', email: '', telefono: '', edad: '',
       motivacion: '', disponibilidad: 'manana',
       tipo: 'individual', corporateSlots: '', empresa: '',
+      isPrevVolunteer: 'no', likesKids: 'si', habilidad: 'empatia'
     })
     document.body.style.overflow = ''
   }
@@ -178,6 +203,13 @@ export default function Voluntariado() {
                       <><br />🏢 Empresa: <strong>{formData.empresa}</strong> — {formData.corporateSlots} lugares</>
                     )}
                   </p>
+                  {evaluationResult && (
+                    <div style={{ marginTop: '10px', padding: '10px', background: '#e8f5e9', borderRadius: '8px', border: '1px solid #c8e6c9' }}>
+                      <p style={{ fontSize: '0.8125rem', color: '#2e7d32', fontStyle: 'italic' }}>
+                        🤖 <strong>Nota de Evaluación IA:</strong> {evaluationResult}
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <button className="success-state__btn" onClick={handleClose}>
                   Entendido ✨
@@ -220,16 +252,17 @@ export default function Voluntariado() {
                             value={formData.empresa} onChange={handleChange} />
                         </div>
                         <div className="vol-form__field">
-                          <label>Lugares *</label>
+                          <label>Lugares requeridos *</label>
                           <input type="number" name="corporateSlots" required min="1"
                             max={selectedRole.max_capacity - (selectedRole.current_enrolled || 0)}
                             value={formData.corporateSlots} onChange={handleChange} />
                         </div>
                       </div>
                     )}
+                    
                     <div className="vol-form__row">
                       <div className="vol-form__field">
-                        <label>{formData.tipo === 'empresarial' ? 'Contacto *' : 'Nombre *'}</label>
+                        <label>{formData.tipo === 'empresarial' ? 'Contacto Principal *' : 'Nombre Completo *'}</label>
                         <input type="text" name="nombre" required placeholder="María González"
                           value={formData.nombre} onChange={handleChange} />
                       </div>
@@ -239,29 +272,101 @@ export default function Voluntariado() {
                           value={formData.edad} onChange={handleChange} />
                       </div>
                     </div>
+
                     <div className="vol-form__row">
                       <div className="vol-form__field">
-                        <label>Correo *</label>
+                        <label>Correo Electrónico *</label>
                         <input type="email" name="email" required placeholder="ejemplo@correo.com"
                           value={formData.email} onChange={handleChange} />
                       </div>
                       <div className="vol-form__field">
-                        <label>Teléfono</label>
+                        <label>Teléfono (Opcional)</label>
                         <input type="tel" name="telefono" placeholder="55 1234 5678"
                           value={formData.telefono} onChange={handleChange} />
                       </div>
                     </div>
+
+                    {formData.tipo === 'individual' && (
+                      <>
+                        <div className="vol-form__field">
+                          <label>¿En qué horario te gustaría ayudar? *</label>
+                          <div className="vol-tipo-selector" style={{ marginTop: '5px', gap: '8px' }}>
+                            <label className={`vol-tipo-option ${formData.disponibilidad === 'manana' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                              <input type="radio" name="disponibilidad" value="manana"
+                                checked={formData.disponibilidad === 'manana'} onChange={handleChange} />
+                              <span>🌅 Mañana</span>
+                            </label>
+                            <label className={`vol-tipo-option ${formData.disponibilidad === 'tarde' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                              <input type="radio" name="disponibilidad" value="tarde"
+                                checked={formData.disponibilidad === 'tarde'} onChange={handleChange} />
+                              <span>🌇 Tarde</span>
+                            </label>
+                            <label className={`vol-tipo-option ${formData.disponibilidad === 'fin_semana' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                              <input type="radio" name="disponibilidad" value="fin_semana"
+                                checked={formData.disponibilidad === 'fin_semana'} onChange={handleChange} />
+                              <span>📅 Fines de semana</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="vol-form__row">
+                          <div className="vol-form__field">
+                            <label>¿Ya has sido voluntario antes? *</label>
+                            <div className="vol-tipo-selector" style={{ marginTop: '5px', gap: '8px' }}>
+                              <label className={`vol-tipo-option ${formData.isPrevVolunteer === 'si' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                                <input type="radio" name="isPrevVolunteer" value="si" checked={formData.isPrevVolunteer === 'si'} onChange={handleChange} /> <span>Sí</span>
+                              </label>
+                              <label className={`vol-tipo-option ${formData.isPrevVolunteer === 'no' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                                <input type="radio" name="isPrevVolunteer" value="no" checked={formData.isPrevVolunteer === 'no'} onChange={handleChange} /> <span>No</span>
+                              </label>
+                            </div>
+                          </div>
+                          
+                          <div className="vol-form__field">
+                            <label>¿Te gusta convivir con niños? *</label>
+                            <div className="vol-tipo-selector" style={{ marginTop: '5px', gap: '8px' }}>
+                              <label className={`vol-tipo-option ${formData.likesKids === 'si' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                                <input type="radio" name="likesKids" value="si" checked={formData.likesKids === 'si'} onChange={handleChange} /> <span>¡Me encantan!</span>
+                              </label>
+                              <label className={`vol-tipo-option ${formData.likesKids === 'no' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                                <input type="radio" name="likesKids" value="no" checked={formData.likesKids === 'no'} onChange={handleChange} /> <span>Prefiero otra área</span>
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="vol-form__field">
+                          <label>¿Cuál es tu habilidad principal? *</label>
+                          <div className="vol-tipo-selector" style={{ marginTop: '5px', gap: '8px', flexWrap: 'wrap' }}>
+                            <label className={`vol-tipo-option ${formData.habilidad === 'fuerza' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                              <input type="radio" name="habilidad" value="fuerza" checked={formData.habilidad === 'fuerza'} onChange={handleChange} /> <span>💪 Trabajo manual/físico</span>
+                            </label>
+                            <label className={`vol-tipo-option ${formData.habilidad === 'empatia' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                              <input type="radio" name="habilidad" value="empatia" checked={formData.habilidad === 'empatia'} onChange={handleChange} /> <span>❤️ Escucha activa/Empatía</span>
+                            </label>
+                            <label className={`vol-tipo-option ${formData.habilidad === 'logistica' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                              <input type="radio" name="habilidad" value="logistica" checked={formData.habilidad === 'logistica'} onChange={handleChange} /> <span>📋 Logística y Orden</span>
+                            </label>
+                            <label className={`vol-tipo-option ${formData.habilidad === 'creatividad' ? 'active' : ''}`} style={{ padding: '8px', fontSize: '0.9rem' }}>
+                              <input type="radio" name="habilidad" value="creatividad" checked={formData.habilidad === 'creatividad'} onChange={handleChange} /> <span>🎨 Creatividad/Juego</span>
+                            </label>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
                     <div className="vol-form__field">
                       <label>¿Por qué quieres ser voluntario? *</label>
                       <textarea name="motivacion" rows="3" required
-                        placeholder="Cuéntanos qué te motiva..."
+                        placeholder="Cuéntanos un poco de ti. Nos encanta conocer qué te mueve a ayudar..."
                         value={formData.motivacion} onChange={handleChange} />
                     </div>
+
                     <button type="submit" className="pay-btn volunteer-submit" disabled={isSubmitting}>
-                      {isSubmitting ? '⏳ Enviando...'
+                      {isSubmitting ? '⏳ Analizando perfil y enviando...'
                         : formData.tipo === 'empresarial'
                           ? `🏢 Reservar ${formData.corporateSlots || ''} lugares`
-                          : `🙋 Inscribirme en ${selectedRole.title}`}
+                          : `🙋 Enviar mi postulación para ${selectedRole.title}`}
                     </button>
                   </form>
                 </div>

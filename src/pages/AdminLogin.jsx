@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth, ROLE_INFO } from '../context/AuthContext.jsx'
 
 export default function AdminLogin() {
@@ -10,10 +10,8 @@ export default function AdminLogin() {
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
 
-  // Si ya está autenticado, redirect
   if (isAuthenticated) {
-    navigate('/admin/dashboard')
-    return null
+    return <Navigate to="/admin/dashboard" replace />
   }
 
   async function handleSubmit(e) {

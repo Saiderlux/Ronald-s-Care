@@ -5,6 +5,7 @@ import { useFichas, FICHA_CATEGORIES, VOLUNTEER_CATEGORIES, FICHA_TYPES, INSUMO_
 import { useInventory } from '../context/InventoryContext.jsx'
 import { useInvoices } from '../context/InvoiceContext.jsx'
 import { inKindApi, communicationsApi, sponsorshipApi, volunteersApi, api } from '../api.js'
+import { generarCorreoAgradecimiento, analizarCandidatoAdmin } from '../services/aiService.js'
 
 // ============================
 // EMPTY FORM TEMPLATES
@@ -55,6 +56,15 @@ export default function AdminDashboard() {
   const [validateForm, setValidateForm] = useState({ code: '', inventoryOption: 'existing', inventoryItemId: '', newName: '', newCategory: 'alimentos', newUnit: '', actualQuantity: '', notes: '' })
   const [commForm, setCommForm] = useState({ subject: '', body: '', photo_proof: '', sent_to: '' })
   const [successMsg, setSuccessMsg] = useState('')
+  
+  // AI Email state
+  const [aiContext, setAiContext] = useState('')
+  const [isAiLoading, setIsAiLoading] = useState(false)
+
+  // AI Volunteer state
+  const [volunteerDeckIndex, setVolunteerDeckIndex] = useState(0)
+  const [volunteerAiSummary, setVolunteerAiSummary] = useState('')
+  const [isVolunteerAiLoading, setIsVolunteerAiLoading] = useState(false)
 
   // Load pipeline data
   useEffect(() => {
@@ -63,8 +73,9 @@ export default function AdminDashboard() {
 
   async function loadPipelineData() {
     try {
+      await refreshFichas()
       const [pledges, comms, sponsorData, statsData, volData] = await Promise.all([
-        inKindApi.getAll(),
+        inKindApi.getAll().catch(() => []),
         communicationsApi.getAll().catch(() => []),
         sponsorshipApi.getAll().catch(() => []),
         api.get('/stats').catch(() => ({})),
@@ -229,6 +240,60 @@ export default function AdminDashboard() {
     loadPipelineData()
   }
 
+  async function handleGenerateAI() {
+    setIsAiLoading(true)
+    setCommForm(p => ({ ...p, body: '' })) // Limpiar campo antes de empezar
+    try {
+      const contextText = aiContext || `Agradecimiento por completar la iniciativa "${showCommForm.title}"`;
+      
+      await generarCorreoAgradecimiento(
+        "Donante", 
+        "Comunidad", 
+        contextText,
+        (textChunk) => {
+          setCommForm(p => ({ ...p, body: textChunk }))
+        }
+      );
+    } catch (error) {
+      alert("Error al autocompletar con IA: " + error.message)
+    } finally {
+      setIsAiLoading(false)
+    }
+  }
+
+  // ============================
+  // VOLUNTEER REVIEW HANDLERS
+  // ============================
+  const pendingVolunteers = volunteers.filter(v => v.status === 'pending')
+
+  async function handleReviewVolunteer(volId, newStatus) {
+    try {
+      await volunteersApi.review(volId, { status: newStatus })
+      showSuccess(`✅ Voluntario ${newStatus === 'approved' ? 'Aprobado' : 'Rechazado'}`)
+      setVolunteerAiSummary('') // Reset summary for next candidate
+      await refreshFichas() // Refrescar cupos inmediatamente
+      await loadPipelineData()
+    } catch (error) {
+      alert('Error evaluando voluntario')
+    }
+  }
+
+  async function handleGenerateVolunteerSummary(volunteer) {
+    if (!volunteer) return;
+    setIsVolunteerAiLoading(true)
+    setVolunteerAiSummary('')
+    try {
+      const parentFicha = fichas.find(f => f.id === volunteer.ficha_id)
+      await analizarCandidatoAdmin(volunteer, parentFicha?.title || 'General', (chunk) => {
+        setVolunteerAiSummary(chunk)
+      });
+    } catch (error) {
+      setVolunteerAiSummary("Error contactando a la IA.")
+    } finally {
+      setIsVolunteerAiLoading(false)
+    }
+  }
+
   // ============================
   // SPONSORSHIP REVIEW
   // ============================
@@ -259,6 +324,8 @@ export default function AdminDashboard() {
 
   const roleInfo = ROLE_INFO[user?.role] || ROLE_INFO.ADMIN
 
+  if (!user) return <div className="admin-dash" style={{ padding: '50px', textAlign: 'center' }}>Cargando sesión...</div>
+
   return (
     <main className="admin-dash" id="admin-dashboard">
       {/* Top Bar */}
@@ -269,6 +336,13 @@ export default function AdminDashboard() {
             <span>Panel Admin — <strong>Conexión Tangible</strong></span>
           </div>
           <div className="admin-dash__user-info">
+            {hasRole('IDENTIFIER') && (
+              <button className="btn-sm" 
+                style={{ background: '#E3F2FD', color: '#1976D2', border: 'none', marginRight: '10px', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '600' }}
+                onClick={() => navigate('/admin/inventario')}>
+                📦 Inventario
+              </button>
+            )}
             <span className="admin-dash__role-badge" style={{ background: roleInfo.color }}>
               {roleInfo.label}
             </span>
@@ -347,6 +421,77 @@ export default function AdminDashboard() {
               <div className="pipeline-alert pipeline-alert--warning">
                 <strong>🤖 {autoFichas.length} ficha(s) auto-generada(s)</strong> por inventario bajo.
                 Revisa el inventario y aprueba las fichas necesarias.
+              </div>
+            )}
+
+            {/* VOLUNTEER TINDER DECK */}
+            {pendingVolunteers.length > 0 && (
+              <div className="pipeline-section" style={{ background: '#F8F9FA', padding: '20px', borderRadius: '15px' }}>
+                <div className="pipeline-section__header">
+                  <h3>🫂 Revisión de Voluntarios Pendientes ({pendingVolunteers.length})</h3>
+                </div>
+                
+                {(() => {
+                  const currentVol = pendingVolunteers[0];
+                  const parentFicha = fichas.find(f => f.id === currentVol.ficha_id);
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'white', padding: '25px', borderRadius: '15px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', maxWidth: '500px', margin: '0 auto' }}>
+                      <span style={{ background: '#E3F2FD', color: '#1976D2', padding: '5px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '15px' }}>
+                        Postulante a: {parentFicha?.title || 'Desconocido'}
+                      </span>
+                      
+                      <h4 style={{ fontSize: '1.4rem', marginBottom: '5px', color: '#333' }}>{currentVol.name}</h4>
+                      <div style={{ color: '#6B6B6B', fontSize: '0.9rem', marginBottom: '15px', display: 'flex', gap: '15px' }}>
+                        <span>🎂 {currentVol.age || '?'} años</span>
+                        <span>📧 {currentVol.email}</span>
+                        <span>📱 {currentVol.phone || 'N/A'}</span>
+                      </div>
+
+                      <div style={{ background: '#F5F5F5', padding: '15px', borderRadius: '10px', width: '100%', marginBottom: '20px' }}>
+                        <p style={{ margin: 0, fontStyle: 'italic', color: '#444' }}>"{currentVol.motivation || 'Sin motivación específica.'}"</p>
+                      </div>
+
+                      {/* AI Summary Box */}
+                      <div style={{ width: '100%', marginBottom: '20px' }}>
+                        {volunteerAiSummary ? (
+                          <div style={{ background: '#FFF3E0', padding: '15px', borderRadius: '10px', borderLeft: '4px solid #FF9800' }}>
+                            <p style={{ margin: 0, fontSize: '0.95rem', color: '#E65100', lineHeight: 1.5 }}>
+                              <strong>🤖 Análisis con IA:</strong><br/>
+                              {volunteerAiSummary}
+                            </p>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => handleGenerateVolunteerSummary(currentVol)}
+                            disabled={isVolunteerAiLoading}
+                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px dashed #FFB74D', background: '#FFF8E1', color: '#F57C00', fontWeight: 'bold', cursor: 'pointer' }}
+                          >
+                            {isVolunteerAiLoading ? '⏳ Analizando perfil...' : '✨ Analizar candidato con IA'}
+                          </button>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '15px', width: '100%' }}>
+                        <button 
+                          onClick={() => handleReviewVolunteer(currentVol.id, 'rejected')}
+                          style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '2px solid #EAEAEA', background: 'white', color: '#D32F2F', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s' }}
+                          onMouseOver={e => e.currentTarget.style.background = '#FFEBEE'}
+                          onMouseOut={e => e.currentTarget.style.background = 'white'}
+                        >
+                          ❌ Rechazar
+                        </button>
+                        <button 
+                          onClick={() => handleReviewVolunteer(currentVol.id, 'approved')}
+                          style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: '#2E7D32', color: 'white', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s' }}
+                          onMouseOver={e => e.currentTarget.style.background = '#1B5E20'}
+                          onMouseOut={e => e.currentTarget.style.background = '#2E7D32'}
+                        >
+                          ✅ Aprobar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -529,15 +674,62 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+            {/* SECCIÓN DE VOLUNTARIOS CONFIRMADOS */}
+            <div className="pipeline-section">
+              <div className="pipeline-section__header">
+                <h3>🗓️ Voluntarios Confirmados y Seguimiento</h3>
+              </div>
+              
+              {volunteers.filter(v => v.status === 'approved').length === 0 ? (
+                <p className="pipeline-empty">No hay voluntarios confirmados todavía.</p>
+              ) : (
+                <div className="inventory-table-wrapper">
+                  <table className="inventory-table">
+                    <thead>
+                      <tr>
+                        <th>Voluntario</th>
+                        <th>Habilidad / Info</th>
+                        <th>Iniciativa</th>
+                        <th>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {volunteers.filter(v => v.status === 'approved').map(vol => {
+                        const associatedFicha = fichas.find(f => f.id === vol.ficha_id);
+                        return (
+                          <tr key={vol.id}>
+                            <td>
+                              <strong>{vol.name}</strong><br/>
+                              <small>{vol.email}</small>
+                            </td>
+                            <td>
+                              <div style={{ fontSize: '0.85rem', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {vol.motivation}
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: '0.85rem' }}>{associatedFicha?.emoji} {associatedFicha?.title}</span>
+                            </td>
+                            <td>
+                              <button className="btn-sm" onClick={() => handleReviewVolunteer(vol.id, 'pending')}>
+                                ↩️ Re-evaluar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             {/* Visibilidad de Inventario (Solo Lectura) */}
             <div className="pipeline-section">
               <div className="pipeline-section__header">
                 <h3>📦 Resumen de Inventario ({inventoryItems.length} items)</h3>
                 <div>
-                  <span style={{fontSize: '0.85rem', color: '#6B6B6B', marginRight: '15px'}}>Solo lectura</span>
-                  <button className="pay-btn" style={{padding: '6px 12px', fontSize: '0.85rem', width: 'auto'}} onClick={() => navigate('/admin/inventario')}>
-                    Gestionar Inventario Completo ↗️
-                  </button>
+                  <span style={{fontSize: '0.85rem', color: '#6B6B6B', marginRight: '15px'}}>Vista rápida</span>
                 </div>
               </div>
               {inventoryItems.length > 0 ? (
@@ -744,7 +936,9 @@ export default function AdminDashboard() {
                     </div>
                     {hasRole('COMMUNICATOR') && (
                       <div className="pipeline-item__actions">
-                        <button className="btn-sm btn-success" onClick={() => {
+                        <button className="btn-lg btn-success" 
+                          style={{ padding: '12px 24px', fontSize: '1.1rem', fontWeight: 'bold' }}
+                          onClick={() => {
                           setShowCommForm(ficha)
                           setCommForm({
                             subject: `🎉 ¡Meta cumplida! "${ficha.title}"`,
@@ -752,6 +946,7 @@ export default function AdminDashboard() {
                             photo_proof: '',
                             sent_to: '',
                           })
+                          setAiContext('') // reset AI context
                         }}>
                           ✍️ Crear Comunicado
                         </button>
@@ -777,6 +972,19 @@ export default function AdminDashboard() {
                     </div>
                     {hasRole('COMMUNICATOR') && (
                       <div className="pipeline-item__actions">
+                        <button className="btn-sm" onClick={() => {
+                          const associatedFicha = fichas.find(f => f.id === comm.ficha_id) || { title: 'Ficha Desconocida', current_amount: 0, donors_count: 0 };
+                          setShowCommForm({ ...associatedFicha, comm_id: comm.id })
+                          setCommForm({
+                            subject: comm.subject || '',
+                            body: comm.body || '',
+                            photo_proof: comm.photo_proof || '',
+                            sent_to: comm.sent_to || '',
+                          })
+                          setAiContext('')
+                        }}>
+                          ✏️ Editar
+                        </button>
                         <button className="btn-sm btn-success" onClick={() => handleSendComm(comm.id)}>
                           📧 Enviar
                         </button>
@@ -824,10 +1032,10 @@ export default function AdminDashboard() {
             </div>
             <div className="modal__body">
               <div className="modal__need-info">
-                <div className="modal__need-emoji">{showCommForm.emoji}</div>
+                <div className="modal__need-emoji">{showCommForm.emoji || '📢'}</div>
                 <div>
-                  <p className="modal__need-title">{showCommForm.title}</p>
-                  <p className="modal__need-remaining">{showCommForm.donors_count} donantes · ${showCommForm.current_amount?.toLocaleString()}</p>
+                  <p className="modal__need-title">{showCommForm.title || 'Iniciativa'}</p>
+                  <p className="modal__need-remaining">{showCommForm.donors_count || 0} donantes · ${(showCommForm.current_amount || showCommForm.units_donated || 0).toLocaleString()}</p>
                 </div>
               </div>
               <form className="vol-form" onSubmit={handleCreateComm}>
@@ -837,7 +1045,16 @@ export default function AdminDashboard() {
                     onChange={e => setCommForm(p => ({ ...p, subject: e.target.value }))} />
                 </div>
                 <div className="vol-form__field">
-                  <label>Cuerpo del mensaje *</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+                    <label style={{ margin: 0 }}>Cuerpo del mensaje *</label>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                    <input type="text" placeholder="Contexto para IA (ej: mencionar a Sofía)" style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                      value={aiContext} onChange={e => setAiContext(e.target.value)} />
+                    <button type="button" onClick={handleGenerateAI} disabled={isAiLoading} style={{ background: '#FFC72C', color: '#000', padding: '8px 16px', borderRadius: '4px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>
+                      {isAiLoading ? '⏳ Escribiendo...' : '✨ Redactar con IA'}
+                    </button>
+                  </div>
                   <textarea rows={6} required value={commForm.body}
                     onChange={e => setCommForm(p => ({ ...p, body: e.target.value }))} />
                 </div>

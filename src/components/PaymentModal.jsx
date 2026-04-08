@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import confetti from 'canvas-confetti'
 import { useFichas } from '../context/FichasContext.jsx'
+import { generateTaxDeductionPDF } from '../utils/pdfGenerator.js'
 
 const DONATION_AMOUNTS = [
   { value: 20, label: '1 pasaje' },
@@ -36,6 +37,7 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
   const [wantsInvoice, setWantsInvoice] = useState(false)
   const [donorName, setDonorName] = useState('')
   const [donorEmail, setDonorEmail] = useState('')
+  const [donorRFC, setDonorRFC] = useState('')
 
   const sponsor = need.sponsor_json ? JSON.parse(need.sponsor_json) : null
   const remaining = isGift
@@ -82,6 +84,18 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
         setDidComplete(updatedNeed.units_donated >= updatedNeed.total_units)
       } else {
         setDidComplete(updatedNeed.goal_amount > 0 && updatedNeed.current_amount >= updatedNeed.goal_amount)
+      }
+
+      if (wantsInvoice && donorRFC && donorRFC.length >= 12) {
+        const amt = isGift ? (need.unit_price * giftQuantity) : Math.min(activeAmount, remaining)
+        generateTaxDeductionPDF({
+          donorName: donorName || 'Donante',
+          donorRFC: donorRFC,
+          donationType: 'monetary',
+          itemTitle: need.title,
+          amount: amt,
+          receiptId: 'DON-' + Math.floor(Math.random() * 100000)
+        });
       }
 
       setIsSuccess(true)
@@ -224,6 +238,13 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
               <input type="email" placeholder="Para recibir tu CFDI y agradecimiento"
                 value={donorEmail} onChange={e => setDonorEmail(e.target.value)} />
             </div>
+            {wantsInvoice && (
+              <div className="vol-form__field" style={{ marginBottom: '20px' }}>
+                <label>RFC (Para deducir impuestos) *</label>
+                <input type="text" placeholder="ABCD123456XYZ" minLength="12"
+                  value={donorRFC} onChange={e => setDonorRFC(e.target.value)} />
+              </div>
+            )}
             <div className="vol-tipo-selector" style={{ marginBottom: '20px' }}>
               <label className={`vol-tipo-option ${wantsInvoice ? 'active' : ''}`}>
                 <input type="radio" checked={wantsInvoice}

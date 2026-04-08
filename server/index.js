@@ -179,16 +179,14 @@ app.post('/api/fichas/:id/donate', (req, res) => {
     createInvoiceForDonation(donResult.lastInsertRowid, amount, wants_invoice);
   }
 
-  // Inscripción a voluntariado
+  // Inscripción a voluntariado (Se registra como pendiente, no descuenta cupo todavía)
   if (ficha.type === 'collaborative' && req.body.volunteer_data) {
     const vd = req.body.volunteer_data;
     const slots = vd.slots || 1;
-    db.prepare('UPDATE fichas SET current_enrolled = MIN(current_enrolled + ?, max_capacity) WHERE id = ?')
-      .run(slots, ficha.id);
 
     db.prepare(`INSERT INTO volunteer_registrations (ficha_id, name, email, phone, age, motivation, reg_type, company_name, slots)
       VALUES (?,?,?,?,?,?,?,?,?)`)
-      .run(ficha.id, vd.name, vd.email, vd.phone || null, vd.age || null, vd.motivation || null,
+      .run(ficha.id, vd.name || vd.nombre || 'Anónimo', vd.email, vd.phone || null, vd.age || null, vd.motivation || null,
         vd.type || 'individual', vd.company_name || null, slots);
   }
 
@@ -561,18 +559,22 @@ app.get('/api/volunteers', authMiddleware, (req, res) => {
 });
 
 app.post('/api/volunteers', (req, res) => {
-  const { ficha_id, name, email, phone, age, motivation, reg_type, company_name, slots } = req.body;
+  const { ficha_id, name, nombre, email, phone, age, motivation, reg_type, company_name, slots } = req.body;
+  
+  // Soporte para ambos nombres de campo desde el frontend
+  const finalName = name || nombre;
+  if (!finalName) {
+    console.warn('⚠️ Se recibió un registro de voluntario sin nombre:', req.body);
+  }
 
   const slotsToUse = slots || 1;
 
-  // Inscribir en la ficha
-  db.prepare('UPDATE fichas SET current_enrolled = MIN(current_enrolled + ?, max_capacity) WHERE id = ?')
-    .run(slotsToUse, ficha_id);
+  // Ya no inscribimos en la ficha aquí, se hará al aprobar.
 
   const result = db.prepare(`
     INSERT INTO volunteer_registrations (ficha_id, name, email, phone, age, motivation, reg_type, company_name, slots)
     VALUES (?,?,?,?,?,?,?,?,?)
-  `).run(ficha_id, name, email, phone || null, age || null, motivation || null,
+  `).run(ficha_id, finalName || 'Anónimo', email, phone || null, age || null, motivation || null,
     reg_type || 'individual', company_name || null, slotsToUse);
 
   res.status(201).json(db.prepare('SELECT * FROM volunteer_registrations WHERE id = ?').get(result.lastInsertRowid));
@@ -580,8 +582,24 @@ app.post('/api/volunteers', (req, res) => {
 
 app.put('/api/volunteers/:id/review', authMiddleware, requireRole('IDENTIFIER'), (req, res) => {
   const { status } = req.body;
+  const registration = db.prepare('SELECT * FROM volunteer_registrations WHERE id = ?').get(req.params.id);
+  
+  if (!registration) return res.status(404).json({ message: 'Registro no encontrado' });
+
+  // Si estamos pasando a aprobado y antes no lo estaba
+  if (status === 'approved' && registration.status !== 'approved') {
+    db.prepare('UPDATE fichas SET current_enrolled = MIN(current_enrolled + ?, max_capacity) WHERE id = ?')
+      .run(registration.slots || 1, registration.ficha_id);
+  } 
+  // Si estamos quitando el aprobado (rechazando a alguien ya aprobado)
+  else if (status !== 'approved' && registration.status === 'approved') {
+    db.prepare('UPDATE fichas SET current_enrolled = MAX(current_enrolled - ?, 0) WHERE id = ?')
+      .run(registration.slots || 1, registration.ficha_id);
+  }
+
   db.prepare('UPDATE volunteer_registrations SET status = ? WHERE id = ?').run(status, req.params.id);
-  res.json(db.prepare('SELECT * FROM volunteer_registrations WHERE id = ?').get(req.params.id));
+  const updatedFicha = db.prepare('SELECT * FROM fichas WHERE id = ?').get(registration.ficha_id);
+  res.json({ registration: db.prepare('SELECT * FROM volunteer_registrations WHERE id = ?').get(req.params.id), ficha: updatedFicha });
 });
 
 // ================================================

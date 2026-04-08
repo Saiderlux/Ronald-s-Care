@@ -935,9 +935,12 @@ button {
   box-shadow: none;
 }
 
-.need-card__btn.completed-btn {
+.need-card__btn.completed-btn,
+.need-card__btn.completed-btn:disabled {
   background: var(--color-success);
+  color: #FFFFFF !important;
   box-shadow: none;
+  opacity: 1; /* Override disabled opacity if any */
 }
 
 .need-card__btn.gift-btn {

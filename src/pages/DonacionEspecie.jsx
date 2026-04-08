@@ -2,12 +2,15 @@ import { useState } from 'react'
 import confetti from 'canvas-confetti'
 import { inKindApi } from '../api.js'
 import { INSUMO_CATEGORIES } from '../context/FichasContext.jsx'
+import { generateTaxDeductionPDF } from '../utils/pdfGenerator.js'
+
 
 export default function DonacionEspecie() {
   const [form, setForm] = useState({
     donor_name: '',
     donor_email: '',
     donor_phone: '',
+    donor_rfc: '',
     category: 'alimentos',
     item_description: '',
     estimated_quantity: '',
@@ -29,6 +32,19 @@ export default function DonacionEspecie() {
         estimated_value: parseFloat(form.estimated_value) || 0,
       })
       setResult(pledge)
+      
+      // Auto-generate Tax Deduction PDF
+      if (form.donor_rfc && form.donor_rfc.length >= 12) {
+        generateTaxDeductionPDF({
+          donorName: form.donor_name,
+          donorRFC: form.donor_rfc,
+          donationType: 'inKind',
+          itemTitle: form.item_description,
+          amount: form.estimated_quantity,
+          receiptId: pledge.pledge_code
+        });
+      }
+      
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#DA291C', '#FFC72C', '#27AA5E'] })
     } catch (err) {
       alert('Error al crear la ficha: ' + err.message)
@@ -40,7 +56,7 @@ export default function DonacionEspecie() {
   function handleNewPledge() {
     setResult(null)
     setForm({
-      donor_name: '', donor_email: '', donor_phone: '',
+      donor_name: '', donor_email: '', donor_phone: '', donor_rfc: '',
       category: 'alimentos', item_description: '', estimated_quantity: '', estimated_value: '',
     })
   }
@@ -153,10 +169,17 @@ export default function DonacionEspecie() {
                     value={form.donor_email} onChange={handleChange} />
                 </div>
               </div>
-              <div className="especie-form__field">
-                <label>Teléfono</label>
-                <input type="tel" name="donor_phone" placeholder="55 1234 5678"
-                  value={form.donor_phone} onChange={handleChange} />
+              <div className="especie-form__row">
+                <div className="especie-form__field">
+                  <label>Teléfono</label>
+                  <input type="tel" name="donor_phone" placeholder="55 1234 5678"
+                    value={form.donor_phone} onChange={handleChange} />
+                </div>
+                <div className="especie-form__field">
+                  <label>RFC (Para deducir impuestos) Opcional</label>
+                  <input type="text" name="donor_rfc" placeholder="ABCD123456XYZ" minLength="12"
+                    value={form.donor_rfc} onChange={handleChange} />
+                </div>
               </div>
             </div>
 
