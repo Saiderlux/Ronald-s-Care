@@ -16,7 +16,7 @@ const ficha1 = stmtFicha.run(
   'entretenimiento',
   '📚',
   '2026-05-10',
-  'Sala de Juegos',
+  'Casa CDMX',
   10,
   0,
   'active'
@@ -29,7 +29,7 @@ const ficha2 = stmtFicha.run(
   'alimentacion',
   '🍽️',
   '2026-05-12',
-  'Comedor Central',
+  'Casa Puebla',
   5,
   0,
   'active'

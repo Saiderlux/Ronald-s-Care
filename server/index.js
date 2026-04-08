@@ -598,6 +598,16 @@ app.put('/api/volunteers/:id/review', authMiddleware, requireRole('IDENTIFIER'),
   }
 
   db.prepare('UPDATE volunteer_registrations SET status = ? WHERE id = ?').run(status, req.params.id);
+
+  // Si fue aprobado, crear borrador de comunicación para que el equipo lo envíe
+  if (status === 'approved') {
+    const ficha = db.prepare('SELECT * FROM fichas WHERE id = ?').get(registration.ficha_id);
+    const subject = `¡Felicidades ${registration.name}! Fuiste aceptado como voluntario`;
+    const body = `Hola ${registration.name},\n\n¡Excelentes noticias! Nos complace informarte que tu solicitud para participar como voluntario en la iniciativa "${ficha?.title || 'nuestro evento'}" ha sido APROBADA.\n\n📅 Fecha: ${ficha?.event_date || 'Por confirmar'}\n📍 Lugar: ${ficha?.event_location || 'Casa Ronald McDonald'}\n\nEl equipo coordinador se pondrá en contacto contigo próximamente con los detalles de horario y actividades.\n\n¡Gracias por tu generosidad y tiempo!\n\nEquipo Casa Ronald McDonald`;
+    db.prepare(`INSERT INTO communications (sent_to, subject, body, status) VALUES (?,?,?,'draft')`)
+      .run(registration.email, subject, body);
+  }
+
   const updatedFicha = db.prepare('SELECT * FROM fichas WHERE id = ?').get(registration.ficha_id);
   res.json({ registration: db.prepare('SELECT * FROM volunteer_registrations WHERE id = ?').get(req.params.id), ficha: updatedFicha });
 });

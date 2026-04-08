@@ -269,12 +269,17 @@ export default function AdminDashboard() {
   async function handleReviewVolunteer(volId, newStatus) {
     try {
       await volunteersApi.review(volId, { status: newStatus })
-      showSuccess(`✅ Voluntario ${newStatus === 'approved' ? 'Aprobado' : 'Rechazado'}`)
+      showSuccess(`✅ Voluntario ${newStatus === 'approved' ? 'Aprobado — se creará borrador de correo' : 'Rechazado'}`)
       setVolunteerAiSummary('') // Reset summary for next candidate
       await refreshFichas() // Refrescar cupos inmediatamente
       await loadPipelineData()
     } catch (error) {
-      alert('Error evaluando voluntario')
+      const msg = error?.message || 'Error desconocido'
+      if (msg.includes('Token') || msg.includes('401') || msg.includes('403')) {
+        alert('🔒 Sesión caducada. Por favor inicia sesión de nuevo.')
+      } else {
+        alert(`Error al evaluar voluntario: ${msg}`)
+      }
     }
   }
 
@@ -288,7 +293,7 @@ export default function AdminDashboard() {
         setVolunteerAiSummary(chunk)
       });
     } catch (error) {
-      setVolunteerAiSummary("Error contactando a la IA.")
+      setVolunteerAiSummary('⚠️ IA no disponible en este momento. Puedes revisar el perfil manualmente y tomar tu decisión.')
     } finally {
       setIsVolunteerAiLoading(false)
     }
@@ -530,6 +535,13 @@ export default function AdminDashboard() {
                     <textarea className="admin-dash__form-textarea" name="description" rows={3} required
                       placeholder="Describe la necesidad..." value={fichaForm.description}
                       onChange={e => setFichaForm(p => ({ ...p, description: e.target.value }))} />
+                  </div>
+                  <div className="admin-dash__form-group">
+                    <label className="admin-dash__form-label">📍 Casa / Ubicación</label>
+                    <input className="admin-dash__form-input" name="event_location"
+                      placeholder="Ej: Casa Puebla, Casa CDMX, Casa Edo. Mex..."
+                      value={fichaForm.event_location}
+                      onChange={e => setFichaForm(p => ({ ...p, event_location: e.target.value }))} />
                   </div>
                   <div className="admin-dash__form-row">
                     <div className="admin-dash__form-group" style={{ flex: 1 }}>

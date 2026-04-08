@@ -18,6 +18,7 @@ export default function Voluntariado() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [evaluationResult, setEvaluationResult] = useState(null)
+  const [rejectionMessage, setRejectionMessage] = useState(null)
 
   function handleChange(e) {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }))
@@ -28,14 +29,20 @@ export default function Voluntariado() {
     setIsSubmitting(true)
     try {
       if (formData.tipo === 'individual') {
-        const evaluacion = await evaluarVoluntario(formData);
-        if (evaluacion.estado === 'RECHAZADO') {
-          alert(`Resultado de Postulación: ${evaluacion.estado}\n\nMensaje: ${evaluacion.feedback}`);
-          setIsSubmitting(false);
-          handleClose();
-          return;
+        try {
+          const evaluacion = await evaluarVoluntario(formData);
+          if (evaluacion.estado === 'RECHAZADO') {
+            // Mostrar mensaje de rechazo en la UI, no bloqueamos con alert
+            setRejectionMessage(evaluacion.feedback || 'Tu perfil no cumple los requisitos mínimos en este momento.');
+            setIsSubmitting(false);
+            return;
+          }
+          setEvaluationResult(evaluacion.feedback);
+        } catch (aiErr) {
+          // Si la IA falla, no bloqueamos el registro — el Admin lo revisará manualmente
+          console.warn('IA no disponible, registro procederá para revisión manual:', aiErr.message);
+          setEvaluationResult(null);
         }
-        setEvaluationResult(evaluacion.feedback);
       } else {
         setEvaluationResult("Inscripción empresarial verificada automáticamente por convenios.");
       }
@@ -73,6 +80,7 @@ export default function Voluntariado() {
     setSelectedRole(null)
     setIsSuccess(false)
     setEvaluationResult(null)
+    setRejectionMessage(null)
     setFormData({
       nombre: '', email: '', telefono: '', edad: '',
       motivacion: '', disponibilidad: 'manana',
@@ -244,6 +252,25 @@ export default function Voluntariado() {
                     </label>
                   </div>
                   <form className="vol-form" onSubmit={handleSubmit}>
+                    {/* Mensaje de rechazo por IA (sin tonterías) */}
+                    {rejectionMessage && (
+                      <div style={{
+                        background: '#FFF3E0', border: '2px solid #FF9800', borderRadius: '12px',
+                        padding: '16px', marginBottom: '20px',
+                      }}>
+                        <p style={{ margin: 0, fontWeight: 700, color: '#E65100', fontSize: '0.95rem', marginBottom: '6px' }}>
+                          ⚠️ Postulación no válida
+                        </p>
+                        <p style={{ margin: 0, color: '#BF360C', fontSize: '0.875rem', lineHeight: 1.5 }}>
+                          {rejectionMessage}
+                        </p>
+                        <button type="button" onClick={() => setRejectionMessage(null)}
+                          style={{ marginTop: '10px', background: 'none', border: '1px solid #E65100', borderRadius: '8px',
+                            padding: '6px 14px', color: '#E65100', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
+                          Intentar de nuevo
+                        </button>
+                      </div>
+                    )}
                     {formData.tipo === 'empresarial' && (
                       <div className="vol-form__row">
                         <div className="vol-form__field">

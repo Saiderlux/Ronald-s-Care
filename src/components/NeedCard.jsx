@@ -84,6 +84,11 @@ function CollaborativeCard({ need, onDonate }) {
           </span>
         )}
         <h3 className="need-card__title">{need.title}</h3>
+        {need.event_location && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.8rem', color: '#6B6B6B', marginBottom: '8px' }}>
+            <span>📍</span><span>{need.event_location}</span>
+          </div>
+        )}
         <p className="need-card__description">{need.description}</p>
 
         <div className="progress">
@@ -176,6 +181,11 @@ function GiftCard({ need, onDonate }) {
       <div className="need-card__body">
         <span className="need-card__type-label gift">🎁 Regalo directo</span>
         <h3 className="need-card__title">{need.title}</h3>
+        {need.event_location && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.8rem', color: '#6B6B6B', marginBottom: '8px' }}>
+            <span>📍</span><span>{need.event_location}</span>
+          </div>
+        )}
         <p className="need-card__description">{need.description}</p>
 
         <div className="gift-info">
