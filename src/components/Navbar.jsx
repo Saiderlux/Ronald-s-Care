@@ -1,16 +1,30 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
+import ronaldsCareLogo from '../../5b501c14-0a60-4bcc-8f18-8fb5444b78fa.jpeg'
 
 export default function Navbar() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [logoSrc, setLogoSrc] = useState(ronaldsCareLogo)
+  const isDonationRoute = ['/donar', '/donar-especie', '/apadrinamiento', '/voluntariado']
+    .some(route => location.pathname.startsWith(route))
 
   return (
     <nav className="navbar" id="navbar">
       <div className="container navbar__inner">
         <NavLink to="/" className="navbar__logo">
-          <span className="navbar__logo-icon">🏠</span>
-          <span>Conexión <span className="text-gradient">Tangible</span></span>
+          <span className="navbar__logo-icon navbar__logo-icon--image">
+            <img
+              src={logoSrc}
+              alt="Logo Ronald's Care"
+              className="navbar__logo-image"
+              loading="eager"
+              decoding="async"
+              onError={() => setLogoSrc('/favicon.svg')}
+            />
+          </span>
+          <span>Ronald&apos;s Care</span>
         </NavLink>
 
         <button className="navbar__hamburger" onClick={() => setMenuOpen(!menuOpen)}
@@ -28,30 +42,9 @@ export default function Navbar() {
           </li>
           <li>
             <NavLink to="/donar"
-              className={({ isActive }) => `navbar__link ${isActive ? 'active' : ''}`}
+              className={({ isActive }) => `navbar__link ${(isActive || isDonationRoute) ? 'active' : ''}`}
               onClick={() => setMenuOpen(false)}>
-              Iniciativas
-            </NavLink>
-          </li>
-          <li>
-            <NavLink to="/donar-especie"
-              className={({ isActive }) => `navbar__link ${isActive ? 'active' : ''}`}
-              onClick={() => setMenuOpen(false)}>
-              En Especie
-            </NavLink>
-          </li>
-          <li>
-            <NavLink to="/apadrinamiento"
-              className={({ isActive }) => `navbar__link ${isActive ? 'active' : ''}`}
-              onClick={() => setMenuOpen(false)}>
-              Apadrinamiento
-            </NavLink>
-          </li>
-          <li>
-            <NavLink to="/voluntariado"
-              className={({ isActive }) => `navbar__link ${isActive ? 'active' : ''}`}
-              onClick={() => setMenuOpen(false)}>
-              Voluntariado
+              Donaciones
             </NavLink>
           </li>
           <li>

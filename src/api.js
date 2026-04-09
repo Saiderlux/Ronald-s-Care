@@ -125,6 +125,7 @@ export const communicationsApi = {
   create: (data) => api.post('/communications', data),
   send: (id) => api.put(`/communications/${id}/send`, {}),
   getPending: () => api.get('/communications/pending'),
+  getSimulatedByEmail: (email) => api.get(`/communications/simulated?email=${encodeURIComponent(email)}`),
 };
 
 // ============================
@@ -142,4 +143,11 @@ export const volunteersApi = {
 export const donationsApi = {
   getAll: () => api.get('/donations'),
   getByFicha: (fichaId) => api.get(`/donations/ficha/${fichaId}`),
+};
+
+// ============================
+// MI IMPACTO (DONANTE)
+// ============================
+export const impactApi = {
+  getByEmail: (email) => api.get(`/impact?email=${encodeURIComponent(email)}`),
 };

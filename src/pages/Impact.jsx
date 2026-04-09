@@ -1,8 +1,35 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IMPACT_NOTIFICATIONS } from '../data/mockData.js'
+import { impactApi } from '../api.js'
 
 export default function Impact() {
   const navigate = useNavigate()
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [impactData, setImpactData] = useState(null)
+
+  async function handleSearchImpact(e) {
+    e.preventDefault()
+    setError('')
+    setImpactData(null)
+
+    const normalized = email.trim().toLowerCase()
+    if (!normalized) {
+      setError('Ingresa tu correo para consultar tu impacto.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const data = await impactApi.getByEmail(normalized)
+      setImpactData(data)
+    } catch (err) {
+      setError(err.message || 'No pudimos cargar tu impacto por ahora.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <main className="impact" id="impact-page">
@@ -15,31 +42,131 @@ export default function Impact() {
             en Tiempo Real
           </h1>
           <p className="impact__subtitle">
-            Aquí puedes ver exactamente cómo tu donación se convirtió en
-            acción. Transparencia radical, sin secretos.
+            Ingresa tu correo para conocer tus aportes, tu nivel de apoyo
+            y las fichas en las que participaste.
           </p>
         </div>
 
-        {/* Timeline */}
-        <div className="impact-timeline" id="impact-timeline">
-          {IMPACT_NOTIFICATIONS.map((item, index) => (
-            <div
-              className={`impact-item ${item.type === 'completed' ? 'completed' : ''}`}
-              key={item.id}
-              style={{ animationDelay: `${index * 0.15}s` }}
-            >
-              <div className="impact-item__dot">{item.emoji}</div>
-              <div className="impact-item__content">
-                <p className="impact-item__time">{item.time}</p>
-                <h3 className="impact-item__title">{item.title}</h3>
-                <p className="impact-item__text">{item.message}</p>
-                <span className="impact-item__highlight">
-                  {item.highlight}
-                </span>
+        <form className="impact-search" onSubmit={handleSearchImpact}>
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="tu-correo@ejemplo.com"
+            required
+          />
+          <button className="btn-primary" type="submit" disabled={loading}>
+            {loading ? 'Consultando...' : 'Ver mi impacto'}
+          </button>
+        </form>
+
+        {error && <p className="impact-search__error">{error}</p>}
+
+        {impactData && (
+          <>
+            <div className="impact-level-card">
+              <p className="impact-level-card__eyebrow">Nivel de donador</p>
+              <h2 className="impact-level-card__title">{impactData.support_level.title}</h2>
+              <p className="impact-level-card__text">{impactData.support_level.message}</p>
+
+              <div className="impact-level-card__stats">
+                <div className="impact-stat">
+                  <span className="impact-stat__value">{impactData.total_actions || 0}</span>
+                  <span className="impact-stat__label">Acciones de apoyo</span>
+                </div>
+                <div className="impact-stat">
+                  <span className="impact-stat__value">{impactData.unique_fichas || 0}</span>
+                  <span className="impact-stat__label">Fichas apoyadas</span>
+                </div>
+                <div className="impact-stat">
+                  <span className="impact-stat__value">{impactData.completed_supported || 0}</span>
+                  <span className="impact-stat__label">Objetivos completados</span>
+                </div>
               </div>
             </div>
-          ))}
-        </div>
+
+            <div className="impact-participations">
+              <h3 className="impact-participations__title">Aportes en donaciones y regalos</h3>
+
+              {impactData.participations?.length > 0 ? (
+                <div className="impact-participations__grid">
+                  {impactData.participations.map(item => (
+                    <article className="impact-participation-card" key={`${item.ficha_id}-${item.last_donation_at}`}>
+                      <div className="impact-participation-card__header">
+                        <span className="impact-participation-card__emoji">{item.ficha_emoji || '🎁'}</span>
+                        <span className="impact-participation-card__type">
+                          {item.ficha_type === 'gift' ? '🎁 Regalo directo' : '💰 Donación'}
+                        </span>
+                      </div>
+                      <h4 className="impact-participation-card__title">{item.ficha_title || 'Ficha sin título'}</h4>
+                      <p className="impact-participation-card__meta">
+                        {item.donations_count} aportes · Último apoyo: {item.last_donation_at ? new Date(item.last_donation_at).toLocaleDateString() : '—'}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="impact-participations__empty">No encontramos fichas asociadas a este correo todavía.</p>
+              )}
+            </div>
+
+            <div className="impact-participations" style={{ marginTop: '24px' }}>
+              <h3 className="impact-participations__title">Voluntariados en los que participaste</h3>
+
+              {impactData.volunteer_participations?.length > 0 ? (
+                <div className="impact-participations__grid">
+                  {impactData.volunteer_participations.map(item => (
+                    <article className="impact-participation-card" key={`vol-${item.ficha_id}-${item.last_participation_at}`}>
+                      <div className="impact-participation-card__header">
+                        <span className="impact-participation-card__emoji">{item.ficha_emoji || '🙋'}</span>
+                        <span className="impact-participation-card__type">🙋 Voluntariado</span>
+                      </div>
+                      <h4 className="impact-participation-card__title">{item.ficha_title || 'Actividad de voluntariado'}</h4>
+                      <p className="impact-participation-card__meta">
+                        {item.participations_count} participación(es) aprobada(s)
+                        {item.total_slots ? ` · ${item.total_slots} lugar(es)` : ''}
+                        {' · '}Última: {item.last_participation_at ? new Date(item.last_participation_at).toLocaleDateString() : '—'}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="impact-participations__empty">Aún no hay participaciones aprobadas de voluntariado para este correo.</p>
+              )}
+            </div>
+
+            <div className="impact-participations" style={{ marginTop: '24px' }}>
+              <h3 className="impact-participations__title">Donaciones en especie validadas</h3>
+
+              {impactData.in_kind_participations?.length > 0 ? (
+                <div className="impact-participations__grid">
+                  {impactData.in_kind_participations.map(item => (
+                    <article className="impact-participation-card" key={`ink-${item.id}`}>
+                      <div className="impact-participation-card__header">
+                        <span className="impact-participation-card__emoji">📦</span>
+                        <span className="impact-participation-card__type">
+                          {item.delivery_method === 'courier' ? '📦 Paquetería' : '🏠 Entrega física'}
+                        </span>
+                      </div>
+                      <h4 className="impact-participation-card__title">{item.item_description}</h4>
+                      <p className="impact-participation-card__meta">
+                        {item.estimated_quantity ? `Cantidad: ${item.estimated_quantity} · ` : ''}
+                        Validada: {item.validated_at ? new Date(item.validated_at).toLocaleDateString() : '—'}
+                      </p>
+                      <p className="impact-participation-card__meta">
+                        {item.delivery_method === 'courier'
+                          ? `Tracking: ${item.tracking_id || '—'}`
+                          : `Código: ${item.pledge_code || '—'}`}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="impact-participations__empty">No hay donaciones en especie validadas para este correo.</p>
+              )}
+            </div>
+          </>
+        )}
 
         {/* CTA to emails */}
         <div style={{

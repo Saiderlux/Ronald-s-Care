@@ -1,4 +1,4 @@
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { FichasProvider } from './context/FichasContext.jsx'
 import { InventoryProvider } from './context/InventoryContext.jsx'
@@ -9,9 +9,6 @@ import Landing from './pages/Landing.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Impact from './pages/Impact.jsx'
 import ThankYouEmails from './pages/ThankYouEmails.jsx'
-import Voluntariado from './pages/Voluntariado.jsx'
-import DonacionEspecie from './pages/DonacionEspecie.jsx'
-import Apadrinamiento from './pages/Apadrinamiento.jsx'
 import AdminLogin from './pages/AdminLogin.jsx'
 import AdminDashboard from './pages/AdminDashboard.jsx'
 import AdminInventory from './pages/AdminInventory.jsx'
@@ -29,9 +26,9 @@ function AppContent() {
         <Route path="/donar" element={<Dashboard />} />
         <Route path="/impacto" element={<Impact />} />
         <Route path="/correos" element={<ThankYouEmails />} />
-        <Route path="/voluntariado" element={<Voluntariado />} />
-        <Route path="/donar-especie" element={<DonacionEspecie />} />
-        <Route path="/apadrinamiento" element={<Apadrinamiento />} />
+        <Route path="/voluntariado" element={<Navigate to="/donar#voluntariado-section" replace />} />
+        <Route path="/donar-especie" element={<Navigate to="/donar#especie-section" replace />} />
+        <Route path="/apadrinamiento" element={<Navigate to="/donar" replace />} />
 
         {/* Rutas de Admin */}
         <Route path="/admin" element={<AdminLogin />} />

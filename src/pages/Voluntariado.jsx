@@ -4,9 +4,9 @@ import { useFichas } from '../context/FichasContext.jsx'
 import { volunteersApi } from '../api.js'
 import { evaluarVoluntario } from '../services/aiService.js'
 
-export default function Voluntariado() {
+export default function Voluntariado({ embedded = false, eventsOverride = null }) {
   const { getCollaborativeNeeds, refreshFichas } = useFichas()
-  const volunteerEvents = getCollaborativeNeeds()
+  const volunteerEvents = Array.isArray(eventsOverride) ? eventsOverride : getCollaborativeNeeds()
 
   const [selectedRole, setSelectedRole] = useState(null)
   const [formData, setFormData] = useState({
@@ -97,7 +97,7 @@ export default function Voluntariado() {
   }
 
   return (
-    <main className="dashboard" id="voluntariado-page">
+    <div className={`dashboard ${embedded ? 'dashboard--embedded' : ''}`} id="voluntariado-page">
       <div className="container">
         <div className="dashboard__header">
           <h1 className="dashboard__title">
@@ -402,7 +402,7 @@ export default function Voluntariado() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   )
 }
 

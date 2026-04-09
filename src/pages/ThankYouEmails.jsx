@@ -1,13 +1,40 @@
 import { useState } from 'react'
-import { SIMULATED_EMAILS } from '../data/mockData.js'
+import { communicationsApi } from '../api.js'
 
 export default function ThankYouEmails() {
   const [selectedEmail, setSelectedEmail] = useState(null)
   const [openedIds, setOpenedIds] = useState(new Set())
+  const [searchEmail, setSearchEmail] = useState('')
+  const [emails, setEmails] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   function handleOpen(email) {
     setSelectedEmail(email)
     setOpenedIds(prev => new Set([...prev, email.id]))
+  }
+
+  async function handleSearch(e) {
+    e.preventDefault()
+    setSelectedEmail(null)
+    setError('')
+    const normalized = searchEmail.trim().toLowerCase()
+    if (!normalized) {
+      setError('Ingresa un correo para ver la bandeja simulada.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const inbox = await communicationsApi.getSimulatedByEmail(normalized)
+      setEmails(inbox)
+      setOpenedIds(new Set())
+    } catch (err) {
+      setError(err.message || 'No pudimos cargar los correos simulados.')
+      setEmails([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -20,10 +47,24 @@ export default function ThankYouEmails() {
             <span className="text-gradient">Agradecimiento</span>
           </h1>
           <p className="impact__subtitle">
-            Cada vez que una ficha a la que donaste se completa, recibes un
-            correo como estos. Transparencia y gratitud, siempre.
+            Ingresa un correo de prueba para simular mensajes por cada hito:
+            ficha completada, voluntariado aprobado y donación en especie validada.
           </p>
         </div>
+
+        <form className="impact-search" onSubmit={handleSearch}>
+          <input
+            type="email"
+            placeholder="correo@ejemplo.com"
+            value={searchEmail}
+            onChange={e => setSearchEmail(e.target.value)}
+            required
+          />
+          <button className="btn-primary" type="submit" disabled={loading}>
+            {loading ? 'Consultando...' : 'Ver bandeja simulada'}
+          </button>
+        </form>
+        {error && <p className="impact-search__error">{error}</p>}
 
         {/* Phone Mockup */}
         <div className="email-simulator">
@@ -38,9 +79,9 @@ export default function ThankYouEmails() {
               <div className="email-phone__header">
                 <div className="email-phone__header-icon">🏠</div>
                 <div className="email-phone__header-text">
-                  <div className="email-phone__header-title">Conexión Tangible</div>
+                  <div className="email-phone__header-title">Ronald&apos;s Care</div>
                   <div className="email-phone__header-subtitle">
-                    {SIMULATED_EMAILS.filter(e => e.unread && !openedIds.has(e.id)).length} sin leer
+                    {emails.filter(e => e.unread && !openedIds.has(e.id)).length} sin leer
                   </div>
                 </div>
               </div>
@@ -53,7 +94,7 @@ export default function ThankYouEmails() {
                     onBack={() => setSelectedEmail(null)}
                   />
                 ) : (
-                  SIMULATED_EMAILS.map((email, index) => {
+                  emails.map((email, index) => {
                     const isUnread = email.unread && !openedIds.has(email.id)
                     return (
                       <div
@@ -76,6 +117,17 @@ export default function ThankYouEmails() {
                       </div>
                     )
                   })
+                )}
+
+                {!selectedEmail && !loading && emails.length === 0 && (
+                  <div className="dashboard__empty-state" style={{ padding: '28px 12px' }}>
+                    <span className="dashboard__empty-icon" style={{ fontSize: '2rem' }}>📭</span>
+                    <h3 className="dashboard__empty-title" style={{ fontSize: '1rem' }}>Sin correos simulados</h3>
+                    <p className="dashboard__empty-text" style={{ fontSize: '0.82rem' }}>
+                      Cuando Admin genere/acepte correos para este correo,
+                      aparecerán aquí automáticamente.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
@@ -127,7 +179,7 @@ function EmailDetail({ email, onBack }) {
           {email.subject}
         </h3>
         <p style={{ fontSize: '0.75rem', color: '#9E9E9E', marginTop: '4px' }}>
-          {email.time}
+          {email.time ? new Date(email.time).toLocaleString() : '—'}
         </p>
       </div>
 

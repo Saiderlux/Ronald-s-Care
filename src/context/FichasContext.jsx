@@ -43,7 +43,6 @@ export const FICHA_TYPES = [
   { id: 'collaborative', label: '🤲 Voluntariado', description: 'Evento de voluntariado con cupos' },
   { id: 'gift', label: '🎁 Regalo', description: 'Monto fijo por unidad' },
   { id: 'donation', label: '💰 Donación', description: 'Donación libre hacia una meta' },
-  { id: 'sponsorship', label: '🤝 Apadrinamiento', description: 'Oportunidad de apadrinamiento' },
 ]
 
 export function FichasProvider({ children }) {

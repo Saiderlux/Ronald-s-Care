@@ -12,7 +12,7 @@ const SPONSORSHIP_TYPES = [
   { id: 'other', label: '✨ Otro', description: 'Cuéntanos qué puedes ofrecer', icon: '✨' },
 ]
 
-export default function Apadrinamiento() {
+export default function Apadrinamiento({ embedded = false }) {
   const [opportunities, setOpportunities] = useState([])
   const [selectedOpp, setSelectedOpp] = useState(null)
   const [showForm, setShowForm] = useState(false)
@@ -71,7 +71,7 @@ export default function Apadrinamiento() {
   }
 
   return (
-    <main className="dashboard" id="apadrinamiento-page">
+    <div className={`dashboard ${embedded ? 'dashboard--embedded' : ''}`} id="apadrinamiento-page">
       <div className="container">
         <div className="dashboard__header">
           <h1 className="dashboard__title">
@@ -240,6 +240,6 @@ export default function Apadrinamiento() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   )
 }

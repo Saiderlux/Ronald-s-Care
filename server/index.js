@@ -139,8 +139,13 @@ app.post('/api/fichas/:id/donate', (req, res) => {
   if (!ficha) return res.status(404).json({ message: 'Ficha no encontrada' });
 
   const { amount, quantity, donor_name, donor_email, wants_invoice } = req.body;
+  const normalizedEmail = (donor_email || '').trim().toLowerCase();
 
   if (ficha.type === 'gift') {
+    if (!normalizedEmail) {
+      return res.status(400).json({ message: 'El correo electrónico es obligatorio para registrar tu impacto.' });
+    }
+
     const qty = quantity || 1;
     const newDonated = Math.min(ficha.units_donated + qty, ficha.total_units);
     const donationAmount = ficha.unit_price * qty;
@@ -155,12 +160,16 @@ app.post('/api/fichas/:id/donate', (req, res) => {
     // Register donation
     const donResult = db.prepare(
       'INSERT INTO donations (ficha_id, amount, donor_name, donor_email, wants_invoice) VALUES (?,?,?,?,?)'
-    ).run(ficha.id, donationAmount, donor_name || 'Anónimo', donor_email || null, wants_invoice ? 1 : 0);
+    ).run(ficha.id, donationAmount, donor_name || 'Anónimo', normalizedEmail, wants_invoice ? 1 : 0);
 
     // Create invoice record
     createInvoiceForDonation(donResult.lastInsertRowid, donationAmount, wants_invoice);
 
   } else if (ficha.type === 'donation' || ficha.type === 'collaborative') {
+    if (ficha.type === 'donation' && !normalizedEmail) {
+      return res.status(400).json({ message: 'El correo electrónico es obligatorio para registrar tu impacto.' });
+    }
+
     const sponsor = ficha.sponsor_json ? JSON.parse(ficha.sponsor_json) : null;
     const effectiveAmount = sponsor?.type === 'matching' ? amount * 2 : amount;
     const newAmount = Math.min(ficha.current_amount + effectiveAmount, ficha.goal_amount || Infinity);
@@ -174,7 +183,7 @@ app.post('/api/fichas/:id/donate', (req, res) => {
 
     const donResult = db.prepare(
       'INSERT INTO donations (ficha_id, amount, donor_name, donor_email, wants_invoice) VALUES (?,?,?,?,?)'
-    ).run(ficha.id, amount, donor_name || 'Anónimo', donor_email || null, wants_invoice ? 1 : 0);
+    ).run(ficha.id, amount, donor_name || 'Anónimo', normalizedEmail || null, wants_invoice ? 1 : 0);
 
     createInvoiceForDonation(donResult.lastInsertRowid, amount, wants_invoice);
   }
@@ -200,10 +209,164 @@ function createInvoiceForDonation(donationId, amount, wantsInvoice) {
   ).run(donationId, amount, wantsInvoice ? 'pending' : 'no_fiscal_data');
 }
 
+function createCommunicationDraft({
+  type,
+  subject,
+  body,
+  sent_to,
+  recipient_email,
+  ficha_id = null,
+  donation_id = null,
+  reference_key = null,
+}) {
+  const normalizedRecipient = (recipient_email || sent_to || '').trim().toLowerCase();
+  if (!normalizedRecipient) return;
+
+  if (reference_key) {
+    const existing = db.prepare('SELECT id FROM communications WHERE reference_key = ?').get(reference_key);
+    if (existing) return;
+  } else {
+    const existing = db.prepare(`
+      SELECT id
+      FROM communications
+      WHERE type = ?
+        AND LOWER(COALESCE(recipient_email, sent_to, '')) = ?
+        AND COALESCE(ficha_id, 0) = COALESCE(?, 0)
+      LIMIT 1
+    `).get(type, normalizedRecipient, ficha_id);
+    if (existing) return;
+  }
+
+  db.prepare(`
+    INSERT INTO communications (ficha_id, donation_id, type, recipient_email, reference_key, subject, body, sent_to, status)
+    VALUES (?,?,?,?,?,?,?,?, 'draft')
+  `).run(
+    ficha_id,
+    donation_id,
+    type,
+    normalizedRecipient,
+    reference_key,
+    subject,
+    body,
+    sent_to || normalizedRecipient
+  );
+}
+
+function createCompletionDraftsForFicha(fichaId) {
+  const ficha = db.prepare('SELECT * FROM fichas WHERE id = ?').get(fichaId);
+  if (!ficha) return;
+
+  const donors = db.prepare(`
+    SELECT LOWER(donor_email) as donor_email, MAX(donor_name) as donor_name
+    FROM donations
+    WHERE ficha_id = ?
+      AND donor_email IS NOT NULL
+      AND TRIM(donor_email) <> ''
+    GROUP BY LOWER(donor_email)
+  `).all(fichaId);
+
+  donors.forEach((donor) => {
+    const donorName = donor.donor_name || 'donante';
+    const isGift = ficha.type === 'gift';
+    const subject = isGift
+      ? `🎁 ¡Se completó el regalo "${ficha.title}" gracias a tu apoyo!`
+      : `🎉 ¡Meta cumplida! "${ficha.title}" llegó al objetivo`;
+    const body = isGift
+      ? `Hola ${donorName},\n\n¡Gracias por tu regalo directo para "${ficha.title}"!\nLa ficha ya se completó y tu apoyo fue clave para lograrlo.\n\nSeguimos juntos construyendo bienestar para las familias de Casa Ronald.\n\nCon gratitud,\nEquipo Ronald's Care`
+      : `Hola ${donorName},\n\n¡Gracias por apoyar "${ficha.title}"!\nLa meta de esta ficha se completó y tu aportación fue parte del resultado.\n\nTu apoyo se traduce en ayuda real para las familias de Casa Ronald.\n\nCon gratitud,\nEquipo Ronald's Care`;
+
+    createCommunicationDraft({
+      type: 'ficha_completed',
+      subject,
+      body,
+      sent_to: donor.donor_email,
+      recipient_email: donor.donor_email,
+      ficha_id: ficha.id,
+      reference_key: `ficha_completed:${ficha.id}:${donor.donor_email}`,
+    });
+  });
+}
+
+function createVolunteerApprovalDraftsForFicha(fichaId) {
+  const ficha = db.prepare('SELECT * FROM fichas WHERE id = ?').get(fichaId);
+  if (!ficha) return;
+
+  const approved = db.prepare(`
+    SELECT *
+    FROM volunteer_registrations
+    WHERE ficha_id = ?
+      AND status = 'approved'
+      AND email IS NOT NULL
+      AND TRIM(email) <> ''
+  `).all(fichaId);
+
+  approved.forEach((registration) => {
+    const recipient = registration.email.trim().toLowerCase();
+    const subject = `🙌 ${registration.name}, tu participación en voluntariado fue aceptada`;
+    const body = `Hola ${registration.name},\n\n¡Excelentes noticias! Tu participación para la actividad "${ficha.title}" fue aceptada.\n\n📅 Fecha: ${ficha.event_date || 'Por confirmar'}\n📍 Lugar: ${ficha.event_location || 'Casa Ronald'}\n\nGracias por donar tu tiempo y energía.\n\nCon gratitud,\nEquipo Ronald's Care`;
+
+    createCommunicationDraft({
+      type: 'volunteer_approved',
+      subject,
+      body,
+      sent_to: recipient,
+      recipient_email: recipient,
+      ficha_id: ficha.id,
+      reference_key: `volunteer_approved:${registration.id}`,
+    });
+  });
+}
+
+function createInKindValidatedDraft(pledge) {
+  const recipient = (pledge.donor_email || '').trim().toLowerCase();
+  if (!recipient) return;
+
+  const subject = `📦 Donación en especie validada: ${pledge.item_description}`;
+  const identifier = pledge.delivery_method === 'courier'
+    ? `Tracking: ${pledge.tracking_id || 'N/A'}`
+    : `Código: ${pledge.pledge_code}`;
+  const body = `Hola ${pledge.donor_name || 'donante'},\n\nConfirmamos que tu donación en especie fue recibida y validada correctamente.\n\nDetalle: ${pledge.item_description}\n${identifier}\n\nGracias por apoyar de forma tangible a las familias de Casa Ronald.\n\nCon gratitud,\nEquipo Ronald's Care`;
+
+  createCommunicationDraft({
+    type: 'in_kind_validated',
+    subject,
+    body,
+    sent_to: recipient,
+    recipient_email: recipient,
+    reference_key: `in_kind_validated:${pledge.id}`,
+  });
+}
+
+function ensureSystemCommunicationDrafts() {
+  const completedFichas = db.prepare("SELECT id FROM fichas WHERE status = 'completed' AND type IN ('donation','gift')").all();
+  completedFichas.forEach(({ id }) => createCompletionDraftsForFicha(id));
+
+  const volunteerFichas = db.prepare("SELECT DISTINCT ficha_id FROM volunteer_registrations WHERE status = 'approved'").all();
+  volunteerFichas.forEach(({ ficha_id }) => {
+    if (ficha_id) createVolunteerApprovalDraftsForFicha(ficha_id);
+  });
+
+  const validatedInKind = db.prepare("SELECT * FROM in_kind_pledges WHERE status IN ('validated','invoiced')").all();
+  validatedInKind.forEach((pledge) => createInKindValidatedDraft(pledge));
+}
+
 // ================================================
 // DONACIONES EN ESPECIE (IN-KIND)
 // ================================================
+function cleanupExpiredInKindPledges() {
+  db.prepare(`
+    DELETE FROM in_kind_pledges
+    WHERE status IN ('pending', 'delivered')
+      AND (
+        (tentative_delivery_date IS NOT NULL AND datetime(tentative_delivery_date, '+30 days') < datetime('now'))
+        OR
+        (tentative_delivery_date IS NULL AND datetime(created_at, '+30 days') < datetime('now'))
+      )
+  `).run();
+}
+
 app.get('/api/in-kind', (req, res) => {
+  cleanupExpiredInKindPledges();
   const { status } = req.query;
   let query = 'SELECT * FROM in_kind_pledges WHERE 1=1';
   const params = [];
@@ -213,23 +376,86 @@ app.get('/api/in-kind', (req, res) => {
 });
 
 app.post('/api/in-kind', (req, res) => {
-  const { donor_name, donor_email, donor_phone, category, item_description, estimated_quantity, estimated_value } = req.body;
+  cleanupExpiredInKindPledges();
+  const {
+    donor_name,
+    donor_email,
+    donor_phone,
+    delivery_method,
+    tentative_delivery_date,
+    courier_provider,
+    tracking_id,
+    category,
+    item_description,
+    estimated_quantity,
+    estimated_value,
+  } = req.body;
+
+  const method = delivery_method === 'courier' ? 'courier' : 'in_person';
+  const normalizedDonorEmail = (donor_email || '').trim().toLowerCase();
+  const normalizedTracking = tracking_id ? tracking_id.trim().toUpperCase() : null;
+
+  if (!normalizedDonorEmail) {
+    return res.status(400).json({ message: 'El correo electrónico es obligatorio para registrar el impacto de la donación en especie.' });
+  }
+
+  if (method === 'in_person' && !tentative_delivery_date) {
+    return res.status(400).json({ message: 'La fecha tentativa de entrega es obligatoria para entrega física.' });
+  }
+
+  if (method === 'courier' && !normalizedTracking) {
+    return res.status(400).json({ message: 'El ID de seguimiento es obligatorio para envíos por paquetería.' });
+  }
+
+  if (normalizedTracking) {
+    const exists = db.prepare('SELECT id FROM in_kind_pledges WHERE tracking_id = ?').get(normalizedTracking);
+    if (exists) {
+      return res.status(400).json({ message: 'Este ID de seguimiento ya fue registrado.' });
+    }
+  }
+
   const pledgeCode = `ESP-${new Date().getFullYear()}-${uuidv4().substring(0, 6).toUpperCase()}`;
 
   const result = db.prepare(`
-    INSERT INTO in_kind_pledges (pledge_code, donor_name, donor_email, donor_phone, category, item_description, estimated_quantity, estimated_value)
-    VALUES (?,?,?,?,?,?,?,?)
-  `).run(pledgeCode, donor_name, donor_email || null, donor_phone || null, category, item_description, estimated_quantity || null, estimated_value || 0);
+    INSERT INTO in_kind_pledges (
+      pledge_code, donor_name, donor_email, donor_phone,
+      delivery_method, tentative_delivery_date, courier_provider, tracking_id,
+      category, item_description, estimated_quantity, estimated_value
+    )
+    VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?)
+  `).run(
+    pledgeCode,
+    donor_name,
+    normalizedDonorEmail,
+    donor_phone || null,
+    method,
+    tentative_delivery_date || null,
+    courier_provider || null,
+    normalizedTracking,
+    category,
+    item_description,
+    estimated_quantity || null,
+    estimated_value || 0
+  );
 
   const pledge = db.prepare('SELECT * FROM in_kind_pledges WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(pledge);
 });
 
 app.put('/api/in-kind/:id/validate', authMiddleware, requireRole('FINANCE'), (req, res) => {
+  cleanupExpiredInKindPledges();
   const pledge = db.prepare('SELECT * FROM in_kind_pledges WHERE id = ?').get(req.params.id);
   if (!pledge) return res.status(404).json({ message: 'Pledge no encontrado' });
 
-  const { inventory_item_id, actual_quantity, notes } = req.body;
+  const { inventory_item_id, actual_quantity, notes, verification_code } = req.body;
+  const expectedCode = pledge.delivery_method === 'courier'
+    ? (pledge.tracking_id || '').trim().toUpperCase()
+    : (pledge.pledge_code || '').trim().toUpperCase();
+
+  const providedCode = verification_code ? verification_code.trim().toUpperCase() : '';
+  if (expectedCode && providedCode && providedCode !== expectedCode) {
+    return res.status(400).json({ message: 'La clave de verificación no coincide con el registro.' });
+  }
 
   db.prepare(`
     UPDATE in_kind_pledges SET status = 'validated', validated_by = ?, validated_at = CURRENT_TIMESTAMP,
@@ -254,6 +480,7 @@ app.put('/api/in-kind/:id/validate', authMiddleware, requireRole('FINANCE'), (re
   ).run(pledge.id, pledge.estimated_value || 0);
 
   const updated = db.prepare('SELECT * FROM in_kind_pledges WHERE id = ?').get(pledge.id);
+  createInKindValidatedDraft(updated);
   res.json(updated);
 });
 
@@ -500,6 +727,7 @@ app.put('/api/sponsorship/:id/review', authMiddleware, requireRole('IDENTIFIER')
 // COMUNICACIONES
 // ================================================
 app.get('/api/communications', authMiddleware, (req, res) => {
+  ensureSystemCommunicationDrafts();
   const comms = db.prepare(`
     SELECT c.*, f.title as ficha_title, f.emoji as ficha_emoji
     FROM communications c
@@ -510,6 +738,7 @@ app.get('/api/communications', authMiddleware, (req, res) => {
 });
 
 app.get('/api/communications/pending', authMiddleware, requireRole('COMMUNICATOR'), (req, res) => {
+  ensureSystemCommunicationDrafts();
   // Fichas completadas sin comunicación enviada
   const pending = db.prepare(`
     SELECT f.* FROM fichas f
@@ -520,13 +749,66 @@ app.get('/api/communications/pending', authMiddleware, requireRole('COMMUNICATOR
   res.json(pending);
 });
 
+app.get('/api/communications/simulated', (req, res) => {
+  ensureSystemCommunicationDrafts();
+  const email = (req.query.email || '').trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ message: 'Debes proporcionar un correo para ver la bandeja simulada.' });
+  }
+
+  const comms = db.prepare(`
+    SELECT c.*, f.title as ficha_title, f.emoji as ficha_emoji
+    FROM communications c
+    LEFT JOIN fichas f ON c.ficha_id = f.id
+    WHERE LOWER(COALESCE(c.recipient_email, '')) = ?
+       OR LOWER(COALESCE(c.sent_to, '')) = ?
+       OR LOWER(COALESCE(c.sent_to, '')) LIKE ?
+    ORDER BY datetime(COALESCE(c.sent_at, c.created_at)) DESC
+  `).all(email, email, `%${email}%`);
+
+  const emails = comms.map((c) => {
+    const typeEmoji = {
+      ficha_completed: '🎉',
+      volunteer_approved: '🙌',
+      in_kind_validated: '📦',
+      thank_you: '💛',
+    };
+
+    return {
+      id: c.id,
+      from: 'Ronald\'s Care',
+      subject: c.subject,
+      preview: (c.body || '').replace(/\n/g, ' ').slice(0, 120),
+      fullBody: c.body,
+      time: c.sent_at || c.created_at,
+      unread: c.status === 'draft',
+      emoji: typeEmoji[c.type] || '📧',
+      status: c.status,
+      type: c.type,
+    };
+  });
+
+  res.json(emails);
+});
+
 app.post('/api/communications', authMiddleware, requireRole('COMMUNICATOR'), (req, res) => {
   const { ficha_id, donation_id, subject, body, photo_proof, sent_to } = req.body;
+  const normalizedRecipient = sent_to ? sent_to.split(',')[0].trim().toLowerCase() : null;
 
   const result = db.prepare(`
-    INSERT INTO communications (ficha_id, donation_id, subject, body, photo_proof, sent_to, sent_by)
-    VALUES (?,?,?,?,?,?,?)
-  `).run(ficha_id || null, donation_id || null, subject, body, photo_proof || null, sent_to || null, req.user.name);
+    INSERT INTO communications (ficha_id, donation_id, type, recipient_email, subject, body, photo_proof, sent_to, sent_by)
+    VALUES (?,?,?,?,?,?,?,?,?)
+  `).run(
+    ficha_id || null,
+    donation_id || null,
+    'thank_you',
+    normalizedRecipient,
+    subject,
+    body,
+    photo_proof || null,
+    sent_to || null,
+    req.user.name
+  );
 
   res.status(201).json(db.prepare('SELECT * FROM communications WHERE id = ?').get(result.lastInsertRowid));
 });
@@ -599,13 +881,9 @@ app.put('/api/volunteers/:id/review', authMiddleware, requireRole('IDENTIFIER'),
 
   db.prepare('UPDATE volunteer_registrations SET status = ? WHERE id = ?').run(status, req.params.id);
 
-  // Si fue aprobado, crear borrador de comunicación para que el equipo lo envíe
+  // Si fue aprobado, generar borradores de todos los aprobados de esa ficha (batch)
   if (status === 'approved') {
-    const ficha = db.prepare('SELECT * FROM fichas WHERE id = ?').get(registration.ficha_id);
-    const subject = `¡Felicidades ${registration.name}! Fuiste aceptado como voluntario`;
-    const body = `Hola ${registration.name},\n\n¡Excelentes noticias! Nos complace informarte que tu solicitud para participar como voluntario en la iniciativa "${ficha?.title || 'nuestro evento'}" ha sido APROBADA.\n\n📅 Fecha: ${ficha?.event_date || 'Por confirmar'}\n📍 Lugar: ${ficha?.event_location || 'Casa Ronald McDonald'}\n\nEl equipo coordinador se pondrá en contacto contigo próximamente con los detalles de horario y actividades.\n\n¡Gracias por tu generosidad y tiempo!\n\nEquipo Casa Ronald McDonald`;
-    db.prepare(`INSERT INTO communications (sent_to, subject, body, status) VALUES (?,?,?,'draft')`)
-      .run(registration.email, subject, body);
+    createVolunteerApprovalDraftsForFicha(registration.ficha_id);
   }
 
   const updatedFicha = db.prepare('SELECT * FROM fichas WHERE id = ?').get(registration.ficha_id);
@@ -631,10 +909,196 @@ app.get('/api/donations/ficha/:fichaId', (req, res) => {
   res.json(donations);
 });
 
+app.get('/api/impact', (req, res) => {
+  const email = (req.query.email || '').trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ message: 'Debes proporcionar un correo electrónico.' });
+  }
+
+  const monetarySummary = db.prepare(`
+    SELECT
+      COUNT(*) as total_donations,
+      COALESCE(SUM(amount), 0) as total_amount,
+      COUNT(DISTINCT ficha_id) as unique_fichas,
+      MAX(created_at) as last_donation_at
+    FROM donations
+    WHERE LOWER(donor_email) = ?
+  `).get(email);
+
+  const participations = db.prepare(`
+    SELECT
+      d.ficha_id,
+      f.title as ficha_title,
+      f.emoji as ficha_emoji,
+      f.type as ficha_type,
+      COUNT(d.id) as donations_count,
+      COALESCE(SUM(d.amount), 0) as total_amount,
+      MAX(d.created_at) as last_donation_at
+    FROM donations d
+    LEFT JOIN fichas f ON f.id = d.ficha_id
+    WHERE LOWER(d.donor_email) = ?
+    GROUP BY d.ficha_id, f.title, f.emoji, f.type
+    ORDER BY last_donation_at DESC
+  `).all(email);
+
+  const volunteerParticipations = db.prepare(`
+    SELECT
+      vr.ficha_id,
+      f.title as ficha_title,
+      f.emoji as ficha_emoji,
+      f.type as ficha_type,
+      COUNT(vr.id) as participations_count,
+      COALESCE(SUM(vr.slots), 0) as total_slots,
+      MAX(vr.created_at) as last_participation_at
+    FROM volunteer_registrations vr
+    LEFT JOIN fichas f ON f.id = vr.ficha_id
+    WHERE LOWER(vr.email) = ?
+      AND vr.status = 'approved'
+    GROUP BY vr.ficha_id, f.title, f.emoji, f.type
+    ORDER BY last_participation_at DESC
+  `).all(email);
+
+  const inKindParticipations = db.prepare(`
+    SELECT
+      id,
+      pledge_code,
+      tracking_id,
+      delivery_method,
+      courier_provider,
+      category,
+      item_description,
+      estimated_quantity,
+      estimated_value,
+      validated_at,
+      status,
+      created_at
+    FROM in_kind_pledges
+    WHERE LOWER(donor_email) = ?
+      AND status IN ('validated', 'invoiced')
+    ORDER BY COALESCE(validated_at, created_at) DESC
+  `).all(email);
+
+  const hasAnyActivity =
+    (monetarySummary?.total_donations || 0) > 0 ||
+    volunteerParticipations.length > 0 ||
+    inKindParticipations.length > 0;
+
+  if (!hasAnyActivity) {
+    return res.json({
+      email,
+      total_donations: 0,
+      volunteer_actions: 0,
+      in_kind_actions: 0,
+      total_actions: 0,
+      support_score: 0,
+      support_level: {
+        key: 'sin-registros',
+        title: 'Aún sin registro',
+        message: 'No encontramos aportes con este correo todavía.',
+      },
+      participations: [],
+      volunteer_participations: [],
+      in_kind_participations: [],
+    });
+  }
+
+  const completedSupported = db.prepare(`
+    SELECT COUNT(DISTINCT d.ficha_id) as total
+    FROM donations d
+    INNER JOIN fichas f ON f.id = d.ficha_id
+    WHERE LOWER(d.donor_email) = ?
+      AND f.status = 'completed'
+  `).get(email).total;
+
+  const volunteerCompletedSupported = db.prepare(`
+    SELECT COUNT(DISTINCT vr.ficha_id) as total
+    FROM volunteer_registrations vr
+    INNER JOIN fichas f ON f.id = vr.ficha_id
+    WHERE LOWER(vr.email) = ?
+      AND vr.status = 'approved'
+      AND f.status = 'completed'
+  `).get(email).total;
+
+  const uniqueSupportedFichas = db.prepare(`
+    SELECT COUNT(DISTINCT ficha_id) as total
+    FROM (
+      SELECT d.ficha_id as ficha_id
+      FROM donations d
+      WHERE LOWER(d.donor_email) = ?
+      UNION ALL
+      SELECT vr.ficha_id as ficha_id
+      FROM volunteer_registrations vr
+      WHERE LOWER(vr.email) = ?
+        AND vr.status = 'approved'
+    )
+    WHERE ficha_id IS NOT NULL
+  `).get(email, email).total;
+
+  const volunteerActions = volunteerParticipations.reduce((acc, p) => acc + (p.participations_count || 0), 0);
+  const inKindActions = inKindParticipations.length;
+  const totalActions = (monetarySummary.total_donations || 0) + volunteerActions + inKindActions;
+
+  const supportScore = Math.round(
+    (monetarySummary.total_amount / 80) +
+    ((monetarySummary.total_donations || 0) * 3) +
+    (volunteerActions * 8) +
+    (inKindActions * 7) +
+    (uniqueSupportedFichas * 2) +
+    ((completedSupported + volunteerCompletedSupported) * 4)
+  );
+
+  function getSupportLevel(score) {
+    if (score >= 120) {
+      return {
+        key: 'transformador',
+        title: 'Corazón Transformador',
+        message: 'Tu apoyo constante está cambiando historias completas. Gracias por sostener esperanza real.',
+      };
+    }
+    if (score >= 70) {
+      return {
+        key: 'impulsor',
+        title: 'Impulsor de Esperanza',
+        message: 'Tu ayuda mantiene en movimiento la red de apoyo para muchas familias.',
+      };
+    }
+    if (score >= 30) {
+      return {
+        key: 'aliado',
+        title: 'Aliado Solidario',
+        message: 'Cada aporte tuyo suma acompañamiento real para quienes más lo necesitan.',
+      };
+    }
+    return {
+      key: 'semilla',
+      title: 'Semilla de Apoyo',
+      message: 'Tu generosidad ya está abriendo camino. Toda ayuda cuenta y la tuya ya empezó a hacer diferencia.',
+    };
+  }
+
+  res.json({
+    email,
+    total_donations: monetarySummary.total_donations,
+    total_amount: monetarySummary.total_amount,
+    volunteer_actions: volunteerActions,
+    in_kind_actions: inKindActions,
+    total_actions: totalActions,
+    unique_fichas: uniqueSupportedFichas,
+    completed_supported: completedSupported + volunteerCompletedSupported,
+    last_donation_at: monetarySummary.last_donation_at,
+    support_score: supportScore,
+    support_level: getSupportLevel(supportScore),
+    participations,
+    volunteer_participations: volunteerParticipations,
+    in_kind_participations: inKindParticipations,
+  });
+});
+
 // ================================================
 // STATS / DASHBOARD
 // ================================================
 app.get('/api/stats', authMiddleware, (req, res) => {
+  cleanupExpiredInKindPledges();
   const totalDonations = db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM donations').get().total;
   const totalDonors = db.prepare('SELECT COUNT(DISTINCT donor_name) as total FROM donations').get().total;
   const activeFichas = db.prepare("SELECT COUNT(*) as total FROM fichas WHERE status = 'active'").get().total;

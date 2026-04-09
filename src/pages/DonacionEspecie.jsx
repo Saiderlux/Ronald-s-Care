@@ -5,12 +5,17 @@ import { INSUMO_CATEGORIES } from '../context/FichasContext.jsx'
 import { generateTaxDeductionPDF } from '../utils/pdfGenerator.js'
 
 
-export default function DonacionEspecie() {
+export default function DonacionEspecie({ embedded = false }) {
+  const todayStr = new Date().toISOString().split('T')[0]
   const [form, setForm] = useState({
     donor_name: '',
     donor_email: '',
     donor_phone: '',
     donor_rfc: '',
+    delivery_method: 'in_person',
+    tentative_delivery_date: '',
+    courier_provider: '',
+    tracking_id: '',
     category: 'alimentos',
     item_description: '',
     estimated_quantity: '',
@@ -57,6 +62,7 @@ export default function DonacionEspecie() {
     setResult(null)
     setForm({
       donor_name: '', donor_email: '', donor_phone: '', donor_rfc: '',
+      delivery_method: 'in_person', tentative_delivery_date: '', courier_provider: '', tracking_id: '',
       category: 'alimentos', item_description: '', estimated_quantity: '', estimated_value: '',
     })
   }
@@ -64,7 +70,7 @@ export default function DonacionEspecie() {
   // Success state
   if (result) {
     return (
-      <main className="dashboard" id="especie-page">
+      <div className={`dashboard ${embedded ? 'dashboard--embedded' : ''}`} id="especie-page">
         <div className="container">
           <div className="especie-success">
             <div className="especie-success__icon">📦</div>
@@ -75,23 +81,43 @@ export default function DonacionEspecie() {
               Tu intención de donación en especie fue registrada exitosamente.
             </p>
 
-            <div className="especie-success__code-card">
-              <p className="especie-success__code-label">Tu código de donación:</p>
-              <div className="especie-success__code">{result.pledge_code}</div>
-              <p className="especie-success__code-hint">
-                Guarda este código. Deberás presentarlo al entregar tu donación en la Casa Ronald McDonald.
-              </p>
-            </div>
+            {result.delivery_method === 'courier' ? (
+              <div className="especie-success__code-card">
+                <p className="especie-success__code-label">ID de seguimiento registrado:</p>
+                <div className="especie-success__code">{result.tracking_id}</div>
+                <p className="especie-success__code-hint">
+                  El equipo validará la entrega usando este ID del servicio de paquetería.
+                </p>
+              </div>
+            ) : (
+              <div className="especie-success__code-card">
+                <p className="especie-success__code-label">Tu código de donación:</p>
+                <div className="especie-success__code">{result.pledge_code}</div>
+                <p className="especie-success__code-hint">
+                  Guarda este código. Deberás presentarlo al entregar tu donación en la Casa Ronald McDonald.
+                </p>
+              </div>
+            )}
 
             <div className="especie-success__steps">
               <h4>📋 Próximos pasos:</h4>
-              <ol>
-                <li>Prepara tu donación: <strong>{result.item_description}</strong></li>
-                <li>Lleva tu donación a la Casa Ronald McDonald más cercana</li>
-                <li>Presenta tu código <strong>{result.pledge_code}</strong> al personal</li>
-                <li>El equipo de finanzas validará tu entrega</li>
-                <li>Recibirás tu comprobante de donación (deducible de impuestos)</li>
-              </ol>
+              {result.delivery_method === 'courier' ? (
+                <ol>
+                  <li>Empaca tu donación: <strong>{result.item_description}</strong></li>
+                  <li>Envía el paquete por <strong>{result.courier_provider || 'tu paquetería'}</strong></li>
+                  <li>Usa y conserva el ID <strong>{result.tracking_id}</strong></li>
+                  <li>El equipo validará tu entrega al recibir el paquete</li>
+                  <li>Recibirás tu comprobante de donación (deducible de impuestos)</li>
+                </ol>
+              ) : (
+                <ol>
+                  <li>Prepara tu donación: <strong>{result.item_description}</strong></li>
+                  <li>Lleva tu donación en la fecha tentativa indicada</li>
+                  <li>Presenta tu código <strong>{result.pledge_code}</strong> al personal</li>
+                  <li>El equipo de finanzas validará tu entrega</li>
+                  <li>Recibirás tu comprobante de donación (deducible de impuestos)</li>
+                </ol>
+              )}
             </div>
 
             <div className="especie-success__actions">
@@ -107,12 +133,12 @@ export default function DonacionEspecie() {
             </div>
           </div>
         </div>
-      </main>
+      </div>
     )
   }
 
   return (
-    <main className="dashboard" id="especie-page">
+    <div className={`dashboard ${embedded ? 'dashboard--embedded' : ''}`} id="especie-page">
       <div className="container">
         <div className="dashboard__header">
           <h1 className="dashboard__title">
@@ -120,8 +146,8 @@ export default function DonacionEspecie() {
             <span className="text-gradient">Especie</span>
           </h1>
           <p className="dashboard__subtitle">
-            ¿Tienes arroz, cobijas, artículos de higiene u otros insumos?
-            Crea una ficha con lo que vas a donar, llévalo a la Casa Ronald y presenta tu código.
+            Puedes registrar tu donación para entrega física o enviarla por paquetería.
+            En ambos casos quedará lista para validación del equipo administrativo.
           </p>
         </div>
 
@@ -154,6 +180,73 @@ export default function DonacionEspecie() {
           <form className="especie-form" onSubmit={handleSubmit}>
             <h3 className="especie-form__title">📦 Registrar Donación en Especie</h3>
 
+            {/* Método de entrega */}
+            <div className="especie-form__section">
+              <h4 className="especie-form__section-title">🚚 Método de entrega</h4>
+              <div className="vol-tipo-selector" style={{ marginTop: '6px' }}>
+                <label className={`vol-tipo-option ${form.delivery_method === 'in_person' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="delivery_method"
+                    value="in_person"
+                    checked={form.delivery_method === 'in_person'}
+                    onChange={handleChange}
+                  />
+                  <span>🏠 Entrega física en Casa Ronald</span>
+                </label>
+                <label className={`vol-tipo-option ${form.delivery_method === 'courier' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="delivery_method"
+                    value="courier"
+                    checked={form.delivery_method === 'courier'}
+                    onChange={handleChange}
+                  />
+                  <span>📦 Envío por paquetería</span>
+                </label>
+              </div>
+
+              {form.delivery_method === 'in_person' ? (
+                <div className="especie-form__field" style={{ marginTop: '12px' }}>
+                  <label>Fecha tentativa de entrega *</label>
+                  <input
+                    type="date"
+                    name="tentative_delivery_date"
+                    min={todayStr}
+                    required
+                    value={form.tentative_delivery_date}
+                    onChange={handleChange}
+                  />
+                  <span className="especie-form__hint">Si no se valida en 30 días después de esta fecha, el registro se limpia automáticamente.</span>
+                </div>
+              ) : (
+                <div className="especie-form__row" style={{ marginTop: '12px' }}>
+                  <div className="especie-form__field">
+                    <label>Paquetería (opcional)</label>
+                    <input
+                      type="text"
+                      name="courier_provider"
+                      placeholder="Amazon, DHL, Estafeta..."
+                      value={form.courier_provider}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="especie-form__field">
+                    <label>ID de seguimiento del paquete *</label>
+                    <input
+                      type="text"
+                      name="tracking_id"
+                      required
+                      placeholder="Ej: 1Z999AA10123456784"
+                      value={form.tracking_id}
+                      onChange={handleChange}
+                    />
+                    <span className="especie-form__hint">Este ID lo usará Admin para validar la llegada del paquete.</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Datos personales */}
             <div className="especie-form__section">
               <h4 className="especie-form__section-title">👤 Tus datos</h4>
@@ -164,8 +257,8 @@ export default function DonacionEspecie() {
                     value={form.donor_name} onChange={handleChange} />
                 </div>
                 <div className="especie-form__field">
-                  <label>Correo electrónico</label>
-                  <input type="email" name="donor_email" placeholder="ejemplo@correo.com"
+                  <label>Correo electrónico *</label>
+                  <input type="email" name="donor_email" required placeholder="ejemplo@correo.com"
                     value={form.donor_email} onChange={handleChange} />
                 </div>
               </div>
@@ -221,6 +314,6 @@ export default function DonacionEspecie() {
           </form>
         </div>
       </div>
-    </main>
+    </div>
   )
 }

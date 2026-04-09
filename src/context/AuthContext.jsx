@@ -14,7 +14,7 @@ export const ROLES = {
 // Permisos por rol
 const ROLE_PERMISSIONS = {
   ADMIN: ['*'], // Todo
-  IDENTIFIER: ['fichas.create', 'fichas.edit', 'fichas.delete', 'inventory.view', 'inventory.manage', 'volunteers.view', 'sponsorship.review'],
+  IDENTIFIER: ['fichas.create', 'fichas.edit', 'fichas.delete', 'inventory.view', 'inventory.manage', 'volunteers.view'],
   FINANCE: ['donations.view', 'inkind.validate', 'invoices.manage', 'invoices.generate', 'stats.view'],
   COMMUNICATOR: ['communications.create', 'communications.send', 'fichas.view'],
 }

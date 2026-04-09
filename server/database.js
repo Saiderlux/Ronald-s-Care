@@ -77,6 +77,10 @@ db.exec(`
     donor_name TEXT NOT NULL,
     donor_email TEXT,
     donor_phone TEXT,
+    delivery_method TEXT DEFAULT 'in_person',
+    tentative_delivery_date TEXT,
+    courier_provider TEXT,
+    tracking_id TEXT,
     category TEXT NOT NULL,
     item_description TEXT NOT NULL,
     estimated_quantity TEXT,
@@ -182,6 +186,8 @@ db.exec(`
     ficha_id INTEGER,
     donation_id INTEGER,
     type TEXT DEFAULT 'thank_you',
+    recipient_email TEXT,
+    reference_key TEXT,
     subject TEXT NOT NULL,
     body TEXT NOT NULL,
     photo_proof TEXT,
@@ -210,6 +216,22 @@ db.exec(`
     FOREIGN KEY (ficha_id) REFERENCES fichas(id)
   );
 `);
+
+function ensureColumn(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  const exists = columns.some(c => c.name === column);
+  if (!exists) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+// Non-breaking migrations for existing DB files
+ensureColumn('in_kind_pledges', 'delivery_method', "TEXT DEFAULT 'in_person'");
+ensureColumn('in_kind_pledges', 'tentative_delivery_date', 'TEXT');
+ensureColumn('in_kind_pledges', 'courier_provider', 'TEXT');
+ensureColumn('in_kind_pledges', 'tracking_id', 'TEXT');
+ensureColumn('communications', 'recipient_email', 'TEXT');
+ensureColumn('communications', 'reference_key', 'TEXT');
 
 // ================================================
 // SEED: Usuarios Admin por defecto

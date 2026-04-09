@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">Ronald's Care logo</title>
+  <desc id="desc">Dos manos abiertas sosteniendo un corazón rojo.</desc>
+  <rect width="240" height="240" rx="28" fill="#F4F4F4"/>
+
+  <!-- Top hand (blue stroke) -->
+  <path d="M18 30 C58 34, 94 44, 122 40 C154 36, 172 40, 182 54 C192 68, 194 84, 186 98 C179 111, 165 118, 146 119 L120 120 C114 129, 100 133, 84 131 C68 129, 54 122, 48 112 C42 104, 34 102, 24 99 L14 95 L12 36 Z"
+        fill="none" stroke="#4A6FA8" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Heart -->
+  <path d="M170 152 C170 152, 144 129, 144 108 C144 92, 155 81, 169 81 C178 81, 186 85, 191 93 C196 85, 204 81, 213 81 C227 81, 238 92, 238 108 C238 129, 212 152, 212 152 L191 175 Z"
+        transform="translate(-47,-8)"
+        fill="#E31B23"/>
+
+  <!-- Bottom hand (yellow stroke) -->
+  <path d="M64 150 C82 164, 99 177, 118 186 C133 193, 148 195, 164 194 L224 189 L223 160 C212 159, 204 160, 196 163 C184 155, 168 153, 152 156 C144 148, 129 147, 118 149 C108 142, 97 136, 88 133 C80 131, 71 135, 68 143 C66 146, 65 149, 64 150 Z"
+        fill="none" stroke="#F4C21D" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Small red detail -->
+  <path d="M154 189 C156 183, 163 181, 169 182 C164 184, 160 186, 158 189 M158 194 C161 191, 168 190, 174 191"
+        fill="none" stroke="#E31B23" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

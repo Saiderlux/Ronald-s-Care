@@ -4,7 +4,7 @@ import { useAuth, ROLE_INFO } from '../context/AuthContext.jsx'
 import { useFichas, FICHA_CATEGORIES, VOLUNTEER_CATEGORIES, FICHA_TYPES, INSUMO_CATEGORIES } from '../context/FichasContext.jsx'
 import { useInventory } from '../context/InventoryContext.jsx'
 import { useInvoices } from '../context/InvoiceContext.jsx'
-import { inKindApi, communicationsApi, sponsorshipApi, volunteersApi, api } from '../api.js'
+import { inKindApi, communicationsApi, volunteersApi, api } from '../api.js'
 import { generarCorreoAgradecimiento, analizarCandidatoAdmin } from '../services/aiService.js'
 
 // ============================
@@ -14,7 +14,6 @@ const EMPTY_FICHA_FORM = {
   type: 'donation', title: '', description: '', category: 'alimentacion', emoji: '🍕',
   goal_amount: '', unit_price: '', total_units: '', unit_label: '',
   event_date: '', event_location: '', max_capacity: '',
-  sponsorship_type: '', duration: '', beneficiary_info: '', requirements: '',
   is_urgent: false, deadline: '',
 }
 
@@ -35,7 +34,6 @@ export default function AdminDashboard() {
   // Pipeline data
   const [inKindPledges, setInKindPledges] = useState([])
   const [communications, setCommunications] = useState([])
-  const [sponsorships, setSponsorships] = useState([])
   const [stats, setStats] = useState({})
   const [volunteers, setVolunteers] = useState([])
 
@@ -74,16 +72,14 @@ export default function AdminDashboard() {
   async function loadPipelineData() {
     try {
       await refreshFichas()
-      const [pledges, comms, sponsorData, statsData, volData] = await Promise.all([
+      const [pledges, comms, statsData, volData] = await Promise.all([
         inKindApi.getAll().catch(() => []),
         communicationsApi.getAll().catch(() => []),
-        sponsorshipApi.getAll().catch(() => []),
         api.get('/stats').catch(() => ({})),
         volunteersApi.getAll().catch(() => []),
       ])
       setInKindPledges(pledges)
       setCommunications(comms)
-      setSponsorships(sponsorData)
       setStats(statsData)
       setVolunteers(volData)
     } catch (err) {
@@ -103,19 +99,32 @@ export default function AdminDashboard() {
   // ============================
   async function handleCreateFicha(e) {
     e.preventDefault()
-    const data = { ...fichaForm, is_urgent: fichaForm.is_urgent ? 1 : 0 }
-    if (data.type === 'donation') data.goal_amount = parseFloat(data.goal_amount) || 0
-    if (data.type === 'gift') {
-      data.unit_price = parseFloat(data.unit_price) || 0
-      data.total_units = parseInt(data.total_units) || 0
-    }
-    if (data.type === 'collaborative') data.max_capacity = parseInt(data.max_capacity) || 0
+    try {
+      const data = {
+        ...fichaForm,
+        is_urgent: fichaForm.is_urgent ? 1 : 0,
+        sponsorship_type: null,
+        duration: null,
+        beneficiary_info: null,
+        requirements: null,
+      }
 
-    await addFicha(data)
-    setFichaForm({ ...EMPTY_FICHA_FORM })
-    setShowFichaForm(false)
-    showSuccess(`✅ Ficha "${data.title}" creada`)
-    loadPipelineData()
+      if (data.type === 'donation') data.goal_amount = parseFloat(data.goal_amount) || 0
+      if (data.type === 'gift') {
+        data.unit_price = parseFloat(data.unit_price) || 0
+        data.total_units = parseInt(data.total_units) || 0
+      }
+      if (data.type === 'collaborative') data.max_capacity = parseInt(data.max_capacity) || 0
+
+      await addFicha(data)
+      await refreshFichas()
+      setFichaForm({ ...EMPTY_FICHA_FORM })
+      setShowFichaForm(false)
+      showSuccess(`✅ Ficha "${data.title}" creada`)
+      loadPipelineData()
+    } catch (err) {
+      alert(`Error al crear ficha: ${err.message}`)
+    }
   }
 
   // ============================
@@ -150,9 +159,13 @@ export default function AdminDashboard() {
   }
 
   function handleValidatePledge(pledge) {
+    const expectedCode = pledge.delivery_method === 'courier'
+      ? (pledge.tracking_id || '')
+      : (pledge.pledge_code || '')
+
     setShowValidateModal(pledge)
     setValidateForm({
-      code: '', inventoryOption: 'existing', inventoryItemId: '',
+      code: expectedCode, inventoryOption: 'existing', inventoryItemId: '',
       newName: pledge.item_description || '', newCategory: 'alimentos', newUnit: '',
       actualQuantity: pledge.estimated_quantity || '', notes: ''
     })
@@ -160,7 +173,11 @@ export default function AdminDashboard() {
 
   async function handleValidateModalSubmit(e) {
     e.preventDefault()
-    if (validateForm.code !== showValidateModal.pledge_code) {
+    const expectedCode = showValidateModal.delivery_method === 'courier'
+      ? (showValidateModal.tracking_id || '').toUpperCase()
+      : (showValidateModal.pledge_code || '').toUpperCase()
+
+    if (validateForm.code.toUpperCase() !== expectedCode) {
       alert('La clave ingresada no coincide. Operación cancelada.')
       return
     }
@@ -184,6 +201,7 @@ export default function AdminDashboard() {
       inventory_item_id: finalInventoryId ? parseInt(finalInventoryId) : null,
       actual_quantity: validateForm.actualQuantity ? parseFloat(validateForm.actualQuantity) : null,
       notes: validateForm.notes || null,
+      verification_code: validateForm.code,
     })
     
     setShowValidateModal(null)
@@ -208,12 +226,12 @@ export default function AdminDashboard() {
   // ============================
   async function handleGenerateCFDI(invoice) {
     await generateCFDI(invoice.id)
-    showSuccess(`✅ CFDI generado: ${invoice.id}`)
+    showSuccess(`⚠️ CFDI simulado generado: ${invoice.id} (MVP sin facturación real)`) 
   }
 
   async function handleSendCFDI(invoice) {
     await sendCFDI(invoice.id)
-    showSuccess(`✅ CFDI enviado al donante`)
+    showSuccess(`⚠️ Envío simulado de CFDI (MVP sin facturación real)`) 
   }
 
   // ============================
@@ -237,6 +255,20 @@ export default function AdminDashboard() {
   async function handleSendComm(commId) {
     await communicationsApi.send(commId)
     showSuccess('📧 Correo enviado (simulado)')
+    loadPipelineData()
+  }
+
+  async function handleSendAllDrafts() {
+    if (draftComms.length === 0) return
+    if (!confirm(`¿Enviar ${draftComms.length} borradores ahora?`)) return
+
+    for (const comm of draftComms) {
+      // Envío secuencial para feedback estable
+      // eslint-disable-next-line no-await-in-loop
+      await communicationsApi.send(comm.id)
+    }
+
+    showSuccess(`📧 ${draftComms.length} correos enviados (simulado)`)
     loadPipelineData()
   }
 
@@ -300,22 +332,12 @@ export default function AdminDashboard() {
   }
 
   // ============================
-  // SPONSORSHIP REVIEW
-  // ============================
-  async function handleReviewSponsorship(id, status) {
-    const notes = status === 'rejected' ? prompt('Motivo del rechazo:') : prompt('Notas (opcional):')
-    await sponsorshipApi.review(id, { status, admin_notes: notes || '' })
-    showSuccess(`✅ Solicitud ${status === 'approved' ? 'aprobada' : 'rechazada'}`)
-    loadPipelineData()
-  }
-
-  // ============================
   // RENDER
   // ============================
   const pendingPledges = inKindPledges.filter(p => p.status === 'pending')
   const validatedPledges = inKindPledges.filter(p => p.status === 'validated')
-  const pendingSponsorships = sponsorships.filter(s => s.status === 'pending')
-  const completedFichas = fichas.filter(f => f.status === 'completed')
+  const visibleFichas = fichas.filter(f => f.type !== 'sponsorship')
+  const completedFichas = visibleFichas.filter(f => f.status === 'completed')
   const sentComms = communications.filter(c => c.status === 'sent')
   const draftComms = communications.filter(c => c.status === 'draft')
   const lowStockItems = getLowStockItems()
@@ -381,7 +403,7 @@ export default function AdminDashboard() {
           </div>
           <div className="admin-dash__stat-card">
             <span className="admin-dash__stat-number">{pendingInvoices.length}</span>
-            <span className="admin-dash__stat-label">Facturas Pend.</span>
+            <span className="admin-dash__stat-label">CFDI Demo Pend.</span>
           </div>
           <div className="admin-dash__stat-card">
             <span className="admin-dash__stat-number">{fichasNeedingComm.length}</span>
@@ -395,8 +417,8 @@ export default function AdminDashboard() {
             onClick={() => setActivePanel('identifier')}
             style={{ '--tab-color': '#2196F3' }}>
             🔍 Identificación
-            {(autoFichas.length + pendingSponsorships.length) > 0 &&
-              <span className="pipeline-tab__badge">{autoFichas.length + pendingSponsorships.length}</span>}
+            {autoFichas.length > 0 &&
+              <span className="pipeline-tab__badge">{autoFichas.length}</span>}
           </button>
           <span className="pipeline-arrow">→</span>
           <button className={`pipeline-tab ${activePanel === 'finance' ? 'active' : ''}`}
@@ -503,7 +525,7 @@ export default function AdminDashboard() {
             {/* Fichas Section */}
             <div className="pipeline-section">
               <div className="pipeline-section__header">
-                <h3>📋 Fichas de Necesidades ({fichas.filter(f => f.status === 'active').length} activas)</h3>
+                <h3>📋 Fichas de Necesidades ({visibleFichas.filter(f => f.status === 'active').length} activas)</h3>
                 {hasRole('IDENTIFIER') && (
                   <button className="admin-dash__create-btn" onClick={() => setShowFichaForm(!showFichaForm)}>
                     {showFichaForm ? '✕ Cancelar' : '＋ Nueva Ficha'}
@@ -618,22 +640,6 @@ export default function AdminDashboard() {
                         onChange={e => setFichaForm(p => ({ ...p, event_location: e.target.value }))} />
                     </div>
                   )}
-                  {fichaForm.type === 'sponsorship' && (
-                    <>
-                      <div className="admin-dash__form-group">
-                        <label className="admin-dash__form-label">Tipo de apadrinamiento</label>
-                        <input className="admin-dash__form-input" placeholder="Ej: Vivienda temporal"
-                          value={fichaForm.sponsorship_type}
-                          onChange={e => setFichaForm(p => ({ ...p, sponsorship_type: e.target.value }))} />
-                      </div>
-                      <div className="admin-dash__form-group">
-                        <label className="admin-dash__form-label">Duración estimada</label>
-                        <input className="admin-dash__form-input" placeholder="Ej: 6 meses"
-                          value={fichaForm.duration}
-                          onChange={e => setFichaForm(p => ({ ...p, duration: e.target.value }))} />
-                      </div>
-                    </>
-                  )}
                   <div className="admin-dash__form-group">
                     <label className="admin-dash__form-checkbox-label">
                       <input type="checkbox" checked={fichaForm.is_urgent}
@@ -652,7 +658,7 @@ export default function AdminDashboard() {
 
               {/* Fichas List */}
               <div className="admin-dash__fichas-grid">
-                {fichas.filter(f => f.status === 'active').map(ficha => (
+                {visibleFichas.filter(f => f.status === 'active').map(ficha => (
                   <div key={ficha.id} className={`admin-dash__ficha-card ${ficha.auto_generated ? 'auto-generated' : ''}`}>
                     {ficha.auto_generated === 1 && (
                       <div className="auto-generated-badge">🤖 Auto-generada por inventario bajo</div>
@@ -663,7 +669,6 @@ export default function AdminDashboard() {
                         {ficha.type === 'collaborative' && '🤲 Voluntariado'}
                         {ficha.type === 'gift' && '🎁 Regalo'}
                         {ficha.type === 'donation' && '💰 Donación'}
-                        {ficha.type === 'sponsorship' && '🤝 Apadrinamiento'}
                       </span>
                       {ficha.is_urgent === 1 && <span className="admin-dash__ficha-urgent">🔴</span>}
                     </div>
@@ -781,27 +786,6 @@ export default function AdminDashboard() {
               )}
             </div>
 
-            {/* Sponsorship Requests */}
-            {pendingSponsorships.length > 0 && (
-              <div className="pipeline-section">
-                <div className="pipeline-section__header">
-                  <h3>🤝 Solicitudes de Apadrinamiento ({pendingSponsorships.length} pendientes)</h3>
-                </div>
-                {pendingSponsorships.map(s => (
-                  <div key={s.id} className="pipeline-item">
-                    <div className="pipeline-item__info">
-                      <strong>{s.requester_name}</strong> — {s.sponsorship_type}
-                      <p>{s.offer_description}</p>
-                      <span className="pipeline-item__meta">📧 {s.requester_email}</span>
-                    </div>
-                    <div className="pipeline-item__actions">
-                      <button className="btn-sm btn-success" onClick={() => handleReviewSponsorship(s.id, 'approved')}>✅ Aprobar</button>
-                      <button className="btn-sm btn-danger" onClick={() => handleReviewSponsorship(s.id, 'rejected')}>❌ Rechazar</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
@@ -817,18 +801,30 @@ export default function AdminDashboard() {
               <div className="pipeline-section__header">
                 <h3>📦 Donaciones en Especie Pendientes ({pendingPledges.length})</h3>
               </div>
+              <p className="pipeline-empty" style={{ marginTop: '-8px', marginBottom: '12px' }}>
+                Los registros pendientes se limpian automáticamente 30 días después de su fecha tentativa de entrega.
+              </p>
               {pendingPledges.length === 0 ? (
                 <p className="pipeline-empty">No hay donaciones en especie pendientes de validación.</p>
               ) : (
                 pendingPledges.map(pledge => (
                   <div key={pledge.id} className="pipeline-item pipeline-item--highlight">
                     <div className="pipeline-item__info">
-                      <div className="pipeline-item__code">{pledge.pledge_code}</div>
+                      <div className="pipeline-item__code">
+                        {pledge.delivery_method === 'courier'
+                          ? `Tracking: ${pledge.tracking_id || '—'}`
+                          : pledge.pledge_code}
+                      </div>
                       <strong>{pledge.donor_name}</strong>
                       <p>{pledge.item_description}</p>
                       <span className="pipeline-item__meta">
                         {pledge.category} · Valor estimado: ${pledge.estimated_value?.toLocaleString()} MXN
                         {pledge.estimated_quantity && ` · Qty: ${pledge.estimated_quantity}`}
+                      </span>
+                      <span className="pipeline-item__meta">
+                        {pledge.delivery_method === 'courier'
+                          ? `📦 Paquetería${pledge.courier_provider ? `: ${pledge.courier_provider}` : ''}`
+                          : `🏠 Entrega física${pledge.tentative_delivery_date ? ` · Fecha tentativa: ${pledge.tentative_delivery_date}` : ''}`}
                       </span>
                     </div>
                     {hasRole('FINANCE') && (
@@ -846,7 +842,19 @@ export default function AdminDashboard() {
             {/* Invoices */}
             <div className="pipeline-section">
               <div className="pipeline-section__header">
-                <h3>🧾 Facturación CFDI ({pendingInvoices.length} pendientes)</h3>
+                <h3>🧾 CFDI (SIMULACIÓN MVP) — {pendingInvoices.length} pendientes</h3>
+              </div>
+              <div style={{
+                background: '#FFF3E0',
+                border: '1px solid #FFCC80',
+                color: '#BF360C',
+                borderRadius: '10px',
+                padding: '12px 14px',
+                marginBottom: '12px',
+                fontSize: '0.86rem',
+                fontWeight: 600,
+              }}>
+                ⚠️ Importante: esta sección es solo demostrativa para el MVP. Aún no se emiten CFDI/facturas fiscales reales.
               </div>
               {invoices.length === 0 ? (
                 <p className="pipeline-empty">No hay facturas registradas.</p>
@@ -873,9 +881,9 @@ export default function AdminDashboard() {
                             <span className={`invoice-status invoice-status--${inv.status}`}>
                               {inv.status === 'no_fiscal_data' && '⚪ Sin datos'}
                               {inv.status === 'pending' && '🟡 Pendiente'}
-                              {inv.status === 'fiscal_data_captured' && '🔵 Datos capturados'}
-                              {inv.status === 'cfdi_generated' && '🟢 Generado'}
-                              {inv.status === 'cfdi_sent' && '✅ Enviado'}
+                              {inv.status === 'fiscal_data_captured' && '🔵 Datos capturados (Demo)'}
+                              {inv.status === 'cfdi_generated' && '🟢 Generado (Demo)'}
+                              {inv.status === 'cfdi_sent' && '✅ Enviado (Demo)'}
                             </span>
                           </td>
                           <td style={{ fontSize: '0.75rem', fontFamily: 'monospace' }}>
@@ -884,12 +892,12 @@ export default function AdminDashboard() {
                           <td>
                             {inv.status === 'fiscal_data_captured' && hasRole('FINANCE') && (
                               <button className="btn-sm btn-success" onClick={() => handleGenerateCFDI(inv)}>
-                                📄 Generar CFDI
+                                📄 Generar CFDI (Demo)
                               </button>
                             )}
                             {inv.status === 'cfdi_generated' && hasRole('FINANCE') && (
                               <button className="btn-sm" onClick={() => handleSendCFDI(inv)}>
-                                📧 Enviar
+                                📧 Enviar (Demo)
                               </button>
                             )}
                           </td>
@@ -974,6 +982,11 @@ export default function AdminDashboard() {
               <div className="pipeline-section">
                 <div className="pipeline-section__header">
                   <h3>📝 Borradores ({draftComms.length})</h3>
+                  {hasRole('COMMUNICATOR') && (
+                    <button className="btn-sm btn-success" onClick={handleSendAllDrafts}>
+                      📤 Enviar todos
+                    </button>
+                  )}
                 </div>
                 {draftComms.map(comm => (
                   <div key={comm.id} className="pipeline-item">
@@ -1108,11 +1121,20 @@ export default function AdminDashboard() {
               </div>
               <form className="vol-form" onSubmit={handleValidateModalSubmit}>
                 <div className="vol-form__field">
-                  <label>Clave de Seguimiento *</label>
-                  <input type="text" required placeholder="Ej: ESP-2026-XXXXXX"
+                  <label>{showValidateModal.delivery_method === 'courier' ? 'ID de Seguimiento del Paquete *' : 'Código de Donación *'}</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={showValidateModal.delivery_method === 'courier' ? 'Ej: 1Z999AA10123456784' : 'Ej: ESP-2026-XXXXXX'}
                     value={validateForm.code}
                     onChange={e => setValidateForm(p => ({ ...p, code: e.target.value.toUpperCase() }))} />
-                  <small style={{color: '#6B6B6B', fontSize: '0.8rem'}}>Verifica que la clave ({showValidateModal.pledge_code}) sea correcta.</small>
+                  <small style={{color: '#6B6B6B', fontSize: '0.8rem'}}>
+                    Verifica que la clave (
+                    {showValidateModal.delivery_method === 'courier'
+                      ? (showValidateModal.tracking_id || '—')
+                      : showValidateModal.pledge_code}
+                    ) sea correcta.
+                  </small>
                 </div>
 
                 <div className="vol-form__field" style={{marginTop: 15, borderTop: '1px solid #EAEAEA', paddingTop: 15}}>

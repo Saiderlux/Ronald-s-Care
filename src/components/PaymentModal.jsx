@@ -48,6 +48,9 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
     ? (need.unit_price || 0) * giftQuantity
     : (selectedAmount || (customAmount ? parseInt(customAmount) : 0))
 
+  const normalizedDonorEmail = donorEmail.trim().toLowerCase()
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedDonorEmail)
+
   function fireConfetti() {
     confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#DA291C', '#FFC72C', '#FF6F00', '#27AA5E'] })
     setTimeout(() => {
@@ -63,7 +66,7 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
     try {
       const donationData = {
         donor_name: donorName || 'Anónimo',
-        donor_email: donorEmail || null,
+        donor_email: normalizedDonorEmail,
         wants_invoice: wantsInvoice,
       }
 
@@ -109,6 +112,10 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
   }
 
   function handleProceedToDonate() {
+    if (!isValidEmail) {
+      alert('Por favor ingresa un correo electrónico válido para registrar tu impacto.')
+      return
+    }
     setShowInvoiceStep(false)
     handleDonate()
   }
@@ -234,9 +241,12 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
                 value={donorName} onChange={e => setDonorName(e.target.value)} />
             </div>
             <div className="vol-form__field" style={{ marginBottom: '20px' }}>
-              <label>Correo electrónico (opcional)</label>
-              <input type="email" placeholder="Para recibir tu CFDI y agradecimiento"
+              <label>Correo electrónico (obligatorio) *</label>
+              <input type="email" required placeholder="Tu correo para registrar tu impacto"
                 value={donorEmail} onChange={e => setDonorEmail(e.target.value)} />
+              {!isValidEmail && donorEmail.length > 0 && (
+                <small style={{ color: '#DA291C' }}>Ingresa un correo válido (ejemplo@correo.com)</small>
+              )}
             </div>
             {wantsInvoice && (
               <div className="vol-form__field" style={{ marginBottom: '20px' }}>
@@ -257,7 +267,7 @@ export default function PaymentModal({ need, onClose, onDonationComplete }) {
                 <span>👍 No por ahora</span>
               </label>
             </div>
-            <button className="pay-btn" onClick={handleProceedToDonate} disabled={isProcessing}>
+            <button className="pay-btn" onClick={handleProceedToDonate} disabled={isProcessing || !isValidEmail}>
               {isProcessing ? '⏳ Procesando...' : `❤️ Confirmar Donación — $${activeAmount.toLocaleString()} MXN`}
             </button>
           </div>
